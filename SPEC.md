@@ -12,7 +12,7 @@ TrueReplay never trusts the agent. It reads the page. The agent's claim is recor
 
 **Wrapper library (TypeScript/npm), imported.** Not a CLI, not an API/API-key service.
 
-- Stagehand is a Node/TS framework; TrueReplay wraps its `act`/`extract` in the same process and language.
+- Stagehand is a Node/TS framework; TrueReplay wraps it in the same process and language. On Stagehand 4.x (current: 4.1.0) `act`/`extract`/`observe` are methods of the `Stagehand` instance and pages come from `stagehand.browser.context` — so the wrapper wraps the **instance** (by composition) plus `page.goto`, not a `page.act` that no longer exists. Facts and evidence in [docs/DAY2.md §0](docs/DAY2.md).
 - A wrapper can't be skipped, so the benchmark number stays true. An agent-called tool (including an API-key service) is skippable, which corrupts the measurement — and a remote service couples the two channels through a boundary we don't control.
 - A CLI is the wrong shape: you wrap function calls, not shell invocations.
 - Hosting/API is a company, not a 7-day MVP. Revisit only if Day 6 clears the kill signal.
@@ -36,18 +36,21 @@ A checker that never says "I don't know" is lying somewhere. **Inconclusive is a
 
 ## Output
 
-- **Per step:** `{action, declaration (or "auto"), verdict, evidence, agent_claim, timestamp}`
-- **Per run:** a replay — the ordered list of steps plus a single landed / did-not-land
-- **Per fleet (benchmark):** four buckets — reported-success/actually-landed, reported-success/did-not-land (**the product**), reported-failure/actually-failed, reported-failure/actually-landed
+- **Per step:** `{kind: write|read|nav, action, declaration (or "auto"), verdict, evidence, attempt, agent_claim, timestamp}`. `agent_claim` is Stagehand's self-report (`ActResult.data.success`, `message`); `attempt` is what it says it did (`actions[]`: selector, method, args) and is used only to decide *where to read the page*, never as evidence of outcome.
+- **Per run:** a replay — the ordered steps, a single landed / did-not-land / inconclusive rolled up over **write** steps only, and an optional run-level `claim` set by the caller's loop (Stagehand 4 has no `agent()`; the loop is yours).
+- **Per fleet (benchmark):** the four buckets — reported-success/actually-landed, reported-success/did-not-land (**the product**), reported-failure/actually-failed, reported-failure/actually-landed — counted at **both** claim levels and reported separately. The headline is the **step-level write** number: it measures the primitive every loop is built on and does not depend on which orchestration loop you ran.
 
 ## The 7-day build
 
-- **Day 1 — Wrapper skeleton, two-channel logging.** Wrap Stagehand `act` and `extract`. Emit a landfall object per step with verdicts stubbed. Record the agent's claim and the page snapshot on separate channels from the first commit. *Done when:* a real automation runs unchanged through the wrapper and produces replays (verdicts empty).
+- **Day 1 — Wrapper skeleton, two-channel logging.** Wrap the `Stagehand` instance's `act`/`extract`/`observe` and the page's `goto` by composition. Emit a step per call with `kind`, verdicts stubbed, `agent_claim` and `attempt` recorded on their own fields, page fingerprint before/after on the evidence field. *Done when:* a real 4.1 automation runs unchanged through the wrapper and produces a replay (verdicts empty). **Status: the first Day-1 commit wrapped `page.act`, which does not exist on Stagehand 4.x — it must be redone against the instance before Day 2 ([docs/DAY2.md §1](docs/DAY2.md)).**
 - **Day 2 — Session-state detection** (build first; highest signal, no declaration). Login walls, CAPTCHA frames, click-intercepting overlays, blank/never-navigated pages, every step. *Done when:* a logged-out page mid-run is caught on the next step; an overlay intercepting clicks at a coordinate is flagged.
 - **Day 3 — Postcondition: the auto-inferred default.** "Did anything change?" — snapshot before/after each act, diff URL/DOM, detect confirmation-shaped elements and form clearing. *Done when:* a submit onto a blocked overlay reports did-not-land with before/after frames, zero postcondition declared.
 - **Day 4 — Postcondition: declared overrides.** Four declarable types on top of the default: URL changed, element present, text matches, field value equals. *Done when:* an engineer overrides the default on one write for a stricter verdict; un-overridden writes still get the auto default.
 - **Day 5 — Grounding (bonus) + inconclusive plumbing.** Read the a11y tree at extract time, match claimed values: exact, then whitespace/case-normalized, else inconclusive. Wire inconclusive as a tracked verdict across all three checks.
-- **Day 6 — The benchmark** (the point of the whole week). 20 real sites, reads and writes, Stagehand only. 5+ runs per site. Agent claim and page truth as separate channels. Count the four buckets. Test against a current frontier setup, not just an old default. **KILL SIGNAL:** if the write-side false-success rate comes back near zero, stop and do not publish.
+- **Day 6 — The benchmark** (the point of the whole week). Stagehand only, 5+ runs per task, agent claim and page truth on separate channels, four buckets counted at step level (headline) and run level. Three constraints the first draft missed:
+  - **Writes only against targets you control or that are sandboxes.** Submitting forms on 20 real third-party sites puts junk orders, signups and messages into other people's systems, violates most terms of service, and is not reproducible (sites change, rate-limit, and escalate to CAPTCHAs on repeat runs). Reads may use public sites. Writes use deployed fixture apps you own (realistic checkout / CRM / settings clones, including a cookie overlay, a session-expiry, and a CAPTCHA page) and vendor sandboxes with test modes.
+  - **The kill signal is a number with an interval, not "near zero".** Pre-register it: e.g. stop if the step-level write false-success rate is < 2 % with a 95 % interval computed over ≥ 200 write steps. Two runs per site is noise; this is why 5+ runs and ≥ 200 write steps are the floor.
+  - **Cost is a line item.** Stagehand 4 accepts a per-call `model` override: run reads on a cheap model and writes on the frontier model under test; record token usage from `metadata` per step and report $/run. Record `browser` provider (local vs Browserbase) per run — CAPTCHA and overlay rates differ between them.
 - **Day 7 — Publish** (only if Day 6 cleared the kill signal). Repo + README led by the benchmark table (write number in the headline). Registry listing. One import line to install.
 
 ## Explicitly not building this week
@@ -60,7 +63,7 @@ Browser-use adapter · Playwright-MCP adapter · dashboard · screenshot judge �
 
 - **Wrapper vs agent-called tool.** Wrapper for the MVP — it can't be skipped, and the benchmark number has to be true.
 - **Auto-inference coverage.** SPAs that mutate the DOM without a meaningful state change may need per-site tuning. Track how often the auto default returns inconclusive; if high, that's the real product-shaping signal.
-- **Frontier-model erosion.** Run against a Claude-for-Chrome-class setup as well as a self-hosted Stagehand default. If the gap is large, the durable market is the self-hosted long tail.
+- **Frontier-model erosion.** Stagehand 4 removed `agent()`; a "Claude-for-Chrome-class" comparison is a comparison of orchestration loops, not of the `act` primitive, and is not measurable at the step level. Out of the MVP. The in-scope version: run the same tasks with two models via the per-call `model` override and compare step-level write false-success. If the gap is large, the durable market is the self-hosted long tail.
 
 ## The strongest failure argument, stated plainly
 

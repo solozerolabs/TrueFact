@@ -4,7 +4,7 @@ Replay what your browser agent actually did — and get an independent verdict o
 
 The gap between "agent said done" and "page says done" is the product.
 
-> **Status: Day 1 of a 7-day MVP.** The wrapper skeleton and two-channel logging exist. Verdicts are stubbed (`inconclusive`) until the three checks land — see [SPEC.md](SPEC.md).
+> **Status: Day 1 of a 7-day MVP, being redone.** The first wrapper targeted `page.act`, which does not exist on Stagehand 4.x. The corrected shape (wrap the `Stagehand` instance) is specified in [docs/DAY2.md](docs/DAY2.md); verdicts stay stubbed (`inconclusive`) until the checks land — see [SPEC.md](SPEC.md).
 
 ## Benchmark
 
@@ -22,22 +22,23 @@ npm install truereplay
 
 ## Use
 
-Wrap your Stagehand instance. Your automation runs unchanged; every `act`/`extract` is recorded as a replay step on a channel separate from what the agent claims.
+Wrap your Stagehand instance (4.x). Your automation runs unchanged; every `act`/`extract`/`observe`/`goto` is recorded as a replay step on a channel separate from what the agent claims.
 
 ```ts
-import { Stagehand } from "@browserbasehq/stagehand";
+import { Stagehand, localBrowser } from "@browserbasehq/stagehand";
 import { withReplay } from "truereplay";
 
-const stagehand = new Stagehand({ env: "LOCAL" });
-await stagehand.init();
+const browser = await localBrowser.launch();
+const stagehand = await Stagehand.create({ browser, model: { modelName: "anthropic/claude-sonnet-5", apiKey } });
 
-const { page, replay } = withReplay(stagehand.page);
+const { act, extract, page, replay } = withReplay(stagehand);
 
-await page.act("click the submit button");
-await page.extract({ instruction: "get the order total", schema });
+await page.goto("https://shop.example/checkout");
+await act("click the 'Place order' button");
+await extract("get the order total", schema);
 
-console.log(replay.steps);   // per-step: action, verdict, evidence, agent_claim, timestamp
-console.log(replay.verdict); // per-run: landed | did-not-land | inconclusive
+console.log(replay.steps);   // per-step: kind, action, verdict, evidence, attempt, agent_claim, timestamp
+console.log(replay.verdict); // per-run over write steps: landed | did-not-land | inconclusive
 ```
 
 ## The rule
