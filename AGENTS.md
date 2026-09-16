@@ -4,6 +4,13 @@ TrueReplay is a TypeScript/npm wrapper around Stagehand that records what a brow
 
 `act` reports selectors as `xpath=/html[1]/…`; `page.locator()` accepts that verbatim, bare xpath, and CSS. `page.snapshot().formattedTree` includes input values (passwords masked) and is the change unit for Day 3 — strip the `[n-m]` node-id prefix before diffing.
 
+Day 3 facts that bite (all probed, see docs/DAY3.md §0):
+- A submit blocked by native `required`/`pattern` validation changes **nothing** in the a11y tree. `:invalid` matches before and after; only `:user-invalid` (and focus jumping to the field) flips after the attempt.
+- **Test fixtures that navigate, redirect, open tabs, or need an HTTP status must be served over `http://`** (`test/helpers.ts` `serve()`, stdlib `node:http`). Chrome silently refuses script navigation to `data:` URLs, and a new tab opened to a `data:` URL reports `url() === ""` forever.
+- Detect a tab switch by page identity, never by URL. Run session detection and take the screenshot on the **final** page after the extended wait.
+- Never let a `landed` row fire without `detectSession` on the destination — a write that bounces to a login wall must not read as `navigated → landed`.
+- Compute the field-match verdict on real values, **then** redact passwords for storage; the reverse makes every password fill trivially match.
+
 ## Commands
 
 ```bash
