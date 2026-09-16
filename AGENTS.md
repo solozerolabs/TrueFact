@@ -1,6 +1,8 @@
 # AGENTS.md — working in this repo
 
-TrueReplay is a TypeScript/npm wrapper around Stagehand that records what a browser agent did and computes an independent `landed / did-not-land / inconclusive` verdict per write by reading the live page. Read [SPEC.md](SPEC.md) (product) and [docs/DAY2.md](docs/DAY2.md) (current build target, incl. verified Stagehand facts) before changing anything.
+TrueReplay is a TypeScript/npm wrapper around Stagehand that records what a browser agent did and computes an independent `landed / did-not-land / inconclusive` verdict per write by reading the live page. Read [SPEC.md](SPEC.md) (product), [docs/DAY2.md](docs/DAY2.md) (built: session detection, verified Stagehand facts) and [docs/DAY3.md](docs/DAY3.md) (next: auto postcondition — spec only, not built) before changing anything.
+
+`act` reports selectors as `xpath=/html[1]/…`; `page.locator()` accepts that verbatim, bare xpath, and CSS. `page.snapshot().formattedTree` includes input values (passwords masked) and is the change unit for Day 3 — strip the `[n-m]` node-id prefix before diffing.
 
 ## Commands
 
