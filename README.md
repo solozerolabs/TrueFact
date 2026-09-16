@@ -1,6 +1,6 @@
-# Landfall
+# TrueReplay
 
-Runtime wrapper for browser-agent write actions. It reads the live page after every step and returns an independent verdict — **landed / did-not-land / inconclusive** — computed without trusting anything the agent claims.
+Replay what your browser agent actually did — and get an independent verdict on whether each write **landed / did-not-land / inconclusive**, computed by reading the live page, not by trusting anything the agent claims.
 
 The gap between "agent said done" and "page says done" is the product.
 
@@ -17,32 +17,32 @@ _The headline is a write-side false-success number. It doesn't exist yet — Day
 ## Install
 
 ```bash
-npm install landfall
+npm install truereplay
 ```
 
 ## Use
 
-Wrap your Stagehand instance. Your automation runs unchanged; every `act`/`extract` now emits a landfall step on a channel separate from what the agent claims.
+Wrap your Stagehand instance. Your automation runs unchanged; every `act`/`extract` is recorded as a replay step on a channel separate from what the agent claims.
 
 ```ts
 import { Stagehand } from "@browserbasehq/stagehand";
-import { withLandfall } from "landfall";
+import { withReplay } from "truereplay";
 
 const stagehand = new Stagehand({ env: "LOCAL" });
 await stagehand.init();
 
-const { page, landfall } = withLandfall(stagehand.page);
+const { page, replay } = withReplay(stagehand.page);
 
 await page.act("click the submit button");
 await page.extract({ instruction: "get the order total", schema });
 
-console.log(landfall.steps);   // per-step: action, verdict, evidence, agent_claim, timestamp
-console.log(landfall.verdict); // per-run: landed | did-not-land | inconclusive
+console.log(replay.steps);   // per-step: action, verdict, evidence, agent_claim, timestamp
+console.log(replay.verdict); // per-run: landed | did-not-land | inconclusive
 ```
 
 ## The rule
 
-Landfall never trusts the agent. It reads the page. The agent's claim is recorded on a separate channel and compared only at the end. If those two channels touch during measurement, the false-success number is worthless — so they don't.
+TrueReplay never trusts the agent. It reads the page. The agent's claim is recorded on a separate channel and compared only at the end. If those two channels touch during measurement, the false-success number is worthless — so they don't.
 
 ## License
 

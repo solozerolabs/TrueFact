@@ -1,4 +1,4 @@
-// Landfall — Day 1: wrapper skeleton + two-channel logging.
+// TrueReplay — Day 1: wrapper skeleton + two-channel logging.
 // Verdicts are stubbed to "inconclusive" until the three checks land (Days 2–5).
 // The one architectural invariant, present from the first commit: the agent's
 // claim and the page's truth are recorded on SEPARATE fields and never compared here.
@@ -14,7 +14,7 @@ export interface Step {
   timestamp: string;
 }
 
-export interface Landfall {
+export interface Replay {
   steps: Step[];
   get verdict(): Verdict; // per-run roll-up
 }
@@ -25,7 +25,7 @@ interface StagehandPage {
   extract(...args: unknown[]): Promise<unknown>;
 }
 
-class LandfallImpl implements Landfall {
+class ReplayImpl implements Replay {
   steps: Step[] = [];
   get verdict(): Verdict {
     if (this.steps.some((s) => s.verdict === "did-not-land")) return "did-not-land";
@@ -41,11 +41,11 @@ function describe(args: unknown[]): string {
   return JSON.stringify(a);
 }
 
-export function withLandfall<T extends StagehandPage>(page: T): { page: T; landfall: Landfall } {
-  const landfall = new LandfallImpl();
+export function withReplay<T extends StagehandPage>(page: T): { page: T; replay: Replay } {
+  const replay = new ReplayImpl();
 
   const record = (action: string, decl: Step["declaration"], claim: unknown) => {
-    landfall.steps.push({
+    replay.steps.push({
       action,
       declaration: decl,
       verdict: "inconclusive", // Days 2–5 compute this from the page
@@ -68,22 +68,22 @@ export function withLandfall<T extends StagehandPage>(page: T): { page: T; landf
     },
   }) as T;
 
-  return { page: wrapped, landfall };
+  return { page: wrapped, replay };
 }
 
-// ponytail: one runnable self-check. `node --import tsx src/index.ts` or run the compiled JS.
+// ponytail: one runnable self-check. `npm run check`.
 if (import.meta.url === `file://${process.argv[1]}`) {
   const fake: StagehandPage = {
     async act(a) { return { success: true, note: a }; },
     async extract() { return { total: "$42.00" }; },
   };
-  const { page, landfall } = withLandfall(fake);
+  const { page, replay } = withReplay(fake);
   await page.act("click submit");
   await page.extract({ instruction: "get order total" });
   const assert = (c: boolean, m: string) => { if (!c) throw new Error(m); };
-  assert(landfall.steps.length === 2, "two steps recorded");
-  assert(landfall.steps[0].agent_claim !== undefined, "agent claim on its own channel");
-  assert(Object.keys(landfall.steps[0].evidence).length === 0, "page-truth channel empty at Day 1");
-  assert(landfall.verdict === "inconclusive", "verdicts stubbed until checks land");
-  console.log("ok — receipts:", JSON.stringify(landfall.steps, null, 2));
+  assert(replay.steps.length === 2, "two steps recorded");
+  assert(replay.steps[0].agent_claim !== undefined, "agent claim on its own channel");
+  assert(Object.keys(replay.steps[0].evidence).length === 0, "page-truth channel empty at Day 1");
+  assert(replay.verdict === "inconclusive", "verdicts stubbed until checks land");
+  console.log("ok — replay:", JSON.stringify(replay.steps, null, 2));
 }
