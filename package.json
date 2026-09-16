@@ -1,5 +1,5 @@
 {
-  "name": "receipt",
+  "name": "landfall",
   "version": "0.0.1",
   "description": "Runtime wrapper for browser-agent write actions: reads the live page and returns an independent landed/did-not-land/inconclusive verdict, without trusting the agent.",
   "type": "module",

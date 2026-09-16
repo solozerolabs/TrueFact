@@ -1,4 +1,4 @@
-// Receipt — Day 1: wrapper skeleton + two-channel logging.
+// Landfall — Day 1: wrapper skeleton + two-channel logging.
 // Verdicts are stubbed to "inconclusive" until the three checks land (Days 2–5).
 // The one architectural invariant, present from the first commit: the agent's
 // claim and the page's truth are recorded on SEPARATE fields and never compared here.
@@ -14,7 +14,7 @@ export interface Step {
   timestamp: string;
 }
 
-export interface Receipt {
+export interface Landfall {
   steps: Step[];
   get verdict(): Verdict; // per-run roll-up
 }
@@ -25,7 +25,7 @@ interface StagehandPage {
   extract(...args: unknown[]): Promise<unknown>;
 }
 
-class ReceiptImpl implements Receipt {
+class LandfallImpl implements Landfall {
   steps: Step[] = [];
   get verdict(): Verdict {
     if (this.steps.some((s) => s.verdict === "did-not-land")) return "did-not-land";
@@ -41,11 +41,11 @@ function describe(args: unknown[]): string {
   return JSON.stringify(a);
 }
 
-export function withReceipt<T extends StagehandPage>(page: T): { page: T; receipt: Receipt } {
-  const receipt = new ReceiptImpl();
+export function withLandfall<T extends StagehandPage>(page: T): { page: T; landfall: Landfall } {
+  const landfall = new LandfallImpl();
 
   const record = (action: string, decl: Step["declaration"], claim: unknown) => {
-    receipt.steps.push({
+    landfall.steps.push({
       action,
       declaration: decl,
       verdict: "inconclusive", // Days 2–5 compute this from the page
@@ -68,7 +68,7 @@ export function withReceipt<T extends StagehandPage>(page: T): { page: T; receip
     },
   }) as T;
 
-  return { page: wrapped, receipt };
+  return { page: wrapped, landfall };
 }
 
 // ponytail: one runnable self-check. `node --import tsx src/index.ts` or run the compiled JS.
@@ -77,13 +77,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     async act(a) { return { success: true, note: a }; },
     async extract() { return { total: "$42.00" }; },
   };
-  const { page, receipt } = withReceipt(fake);
+  const { page, landfall } = withLandfall(fake);
   await page.act("click submit");
   await page.extract({ instruction: "get order total" });
   const assert = (c: boolean, m: string) => { if (!c) throw new Error(m); };
-  assert(receipt.steps.length === 2, "two steps recorded");
-  assert(receipt.steps[0].agent_claim !== undefined, "agent claim on its own channel");
-  assert(Object.keys(receipt.steps[0].evidence).length === 0, "page-truth channel empty at Day 1");
-  assert(receipt.verdict === "inconclusive", "verdicts stubbed until checks land");
-  console.log("ok — receipts:", JSON.stringify(receipt.steps, null, 2));
+  assert(landfall.steps.length === 2, "two steps recorded");
+  assert(landfall.steps[0].agent_claim !== undefined, "agent claim on its own channel");
+  assert(Object.keys(landfall.steps[0].evidence).length === 0, "page-truth channel empty at Day 1");
+  assert(landfall.verdict === "inconclusive", "verdicts stubbed until checks land");
+  console.log("ok — receipts:", JSON.stringify(landfall.steps, null, 2));
 }

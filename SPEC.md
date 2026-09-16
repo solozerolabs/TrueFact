@@ -1,18 +1,18 @@
-# Receipt — 1-Week MVP Spec
+# Landfall — 1-Week MVP Spec
 
-## What Receipt is (one sentence)
+## What Landfall is (one sentence)
 
 A runtime wrapper for browser-agent write actions that reads the live page itself after every step and returns an independent verdict — **landed / did-not-land / inconclusive** — computed without trusting anything the agent claims. The gap between "agent said done" and "page says done" is the product.
 
 ## The rule that governs every design choice
 
-Receipt never trusts the agent. It reads the page. The agent's claim is recorded on a **separate channel** and compared only at the end. If those two channels ever touch during measurement, the false-success number is worthless — so they don't touch.
+Landfall never trusts the agent. It reads the page. The agent's claim is recorded on a **separate channel** and compared only at the end. If those two channels ever touch during measurement, the false-success number is worthless — so they don't touch.
 
 ## Delivery form (decided)
 
 **Wrapper library (TypeScript/npm), imported.** Not a CLI, not an API/API-key service.
 
-- Stagehand is a Node/TS framework; Receipt wraps its `act`/`extract` in the same process and language.
+- Stagehand is a Node/TS framework; Landfall wraps its `act`/`extract` in the same process and language.
 - A wrapper can't be skipped, so the benchmark number stays true. An agent-called tool (including an API-key service) is skippable, which corrupts the measurement — and a remote service couples the two channels through a boundary we don't control.
 - A CLI is the wrong shape: you wrap function calls, not shell invocations.
 - Hosting/API is a company, not a 7-day MVP. Revisit only if Day 6 clears the kill signal.
@@ -37,12 +37,12 @@ A checker that never says "I don't know" is lying somewhere. **Inconclusive is a
 ## Output
 
 - **Per step:** `{action, declaration (or "auto"), verdict, evidence, agent_claim, timestamp}`
-- **Per run:** a receipt — the ordered list of steps plus a single landed / did-not-land
+- **Per run:** a landfall — the ordered list of steps plus a single landed / did-not-land
 - **Per fleet (benchmark):** four buckets — reported-success/actually-landed, reported-success/did-not-land (**the product**), reported-failure/actually-failed, reported-failure/actually-landed
 
 ## The 7-day build
 
-- **Day 1 — Wrapper skeleton, two-channel logging.** Wrap Stagehand `act` and `extract`. Emit a receipt object per step with verdicts stubbed. Record the agent's claim and the page snapshot on separate channels from the first commit. *Done when:* a real automation runs unchanged through the wrapper and produces receipts (verdicts empty).
+- **Day 1 — Wrapper skeleton, two-channel logging.** Wrap Stagehand `act` and `extract`. Emit a landfall object per step with verdicts stubbed. Record the agent's claim and the page snapshot on separate channels from the first commit. *Done when:* a real automation runs unchanged through the wrapper and produces landfalls (verdicts empty).
 - **Day 2 — Session-state detection** (build first; highest signal, no declaration). Login walls, CAPTCHA frames, click-intercepting overlays, blank/never-navigated pages, every step. *Done when:* a logged-out page mid-run is caught on the next step; an overlay intercepting clicks at a coordinate is flagged.
 - **Day 3 — Postcondition: the auto-inferred default.** "Did anything change?" — snapshot before/after each act, diff URL/DOM, detect confirmation-shaped elements and form clearing. *Done when:* a submit onto a blocked overlay reports did-not-land with before/after frames, zero postcondition declared.
 - **Day 4 — Postcondition: declared overrides.** Four declarable types on top of the default: URL changed, element present, text matches, field value equals. *Done when:* an engineer overrides the default on one write for a stricter verdict; un-overridden writes still get the auto default.
@@ -54,7 +54,7 @@ A checker that never says "I don't know" is lying somewhere. **Inconclusive is a
 
 Browser-use adapter · Playwright-MCP adapter · dashboard · screenshot judge · second-model verification · evals · simulation · auto-repair · fixing the agent. Adapters come after the benchmark proves the number, not before.
 
-> Receipt says whether it landed. It never says whether it should have.
+> Landfall says whether it landed. It never says whether it should have.
 
 ## Open questions carried forward
 
