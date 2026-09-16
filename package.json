@@ -1,0 +1,19 @@
+{
+  "name": "receipt",
+  "version": "0.0.1",
+  "description": "Runtime wrapper for browser-agent write actions: reads the live page and returns an independent landed/did-not-land/inconclusive verdict, without trusting the agent.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "SPEC.md"],
+  "scripts": {
+    "build": "tsc",
+    "check": "node --import tsx src/index.ts"
+  },
+  "keywords": ["browser-agent", "stagehand", "verification", "postcondition", "benchmark"],
+  "license": "MIT",
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
