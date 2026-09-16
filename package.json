@@ -11,7 +11,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "check": "node --import tsx src/index.ts"
+    "test": "node --import tsx --test \"test/*.test.ts\"",
+    "probe": "node scripts/probe-stagehand.mjs"
   },
   "keywords": [
     "browser-agent",
@@ -21,7 +22,11 @@
     "benchmark"
   ],
   "license": "MIT",
+  "peerDependencies": {
+    "@browserbasehq/stagehand": "^4.1.0"
+  },
   "devDependencies": {
+    "@browserbasehq/stagehand": "^4.1.0",
     "@types/node": "^22.20.3",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

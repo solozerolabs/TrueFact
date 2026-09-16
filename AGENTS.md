@@ -6,11 +6,12 @@ TrueReplay is a TypeScript/npm wrapper around Stagehand that records what a brow
 
 ```bash
 npm run build          # tsc → dist/
-npm test               # node --import tsx --test test/   (needs local Chrome; no LLM key)
-npm run check          # legacy Day-1 self-check; goes away with the Day-1 redo
-node scripts/probe-stagehand.mjs        # API sanity against the installed Stagehand; run after any bump
+npm test               # node --import tsx --test "test/*.test.ts"  (needs local Chrome; no LLM key)
+npm run probe          # scripts/probe-stagehand.mjs — API sanity vs installed Stagehand; run after any bump
 node scripts/probe-overlay-act.mjs      # one real act on a blocked submit; needs ANTHROPIC_API_KEY or OPENAI_API_KEY
 ```
+
+Detector functions run inside `page.evaluate`, so Stagehand serializes their source: use plain loops and inline arrows, never a `.find(namedFunction)` reference (it silently returns nothing — see the login detector).
 
 ## Invariants (do not negotiate these in a PR)
 
