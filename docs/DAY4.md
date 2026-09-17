@@ -1,6 +1,6 @@
 # Day 4 — Declared postconditions, and the Day 3 revisions they force
 
-Spec (2026-09-16). Not built. Synthesized from seven parallel reviews — official Stagehand docs + installed types, 2025–26 research, an open-source survey via the GitHub API, a deep codebase read, a test-suite audit, an experimental pass, and a devil's advocate — against the shipped Day 1–3 code. Where they disagreed, the call is made below and the reason given.
+Spec (2026-09-16). **Built the same day** — `src/declaration.ts`, `decideWrite`/`pollUntil`/`evidenceOf`/`sessionVerdict` in `src/postcondition.ts`, thin `run()`; R1–R9 applied; 92 tests green in ~12 s (the HTTP-fixture move alone took the suite from 15.8 s to 11.8 s while adding 41 tests). Two things the build caught that the spec did not: a `FieldResult` stored whole as `auto` carried the plaintext password into evidence, and `step.declaration` stored the caller's original object, not the redacted copy — both now redacted at the seam (§7). Synthesized from seven parallel reviews — official Stagehand docs + installed types, 2025–26 research, an open-source survey via the GitHub API, a deep codebase read, a test-suite audit, an experimental pass, and a devil's advocate — against the shipped Day 1–3 code. Where they disagreed, the call is made below and the reason given.
 
 ## 0. The calls, up front
 

@@ -1,10 +1,21 @@
-// Day 3 — auto-inferred postcondition. Capture page state (a11y tree + form
-// values + validity), classify the change after a write, and read the targeted
-// field directly for fill/type/select. Pure where it can be: `classify` is a
-// function of two PageStates, unit-testable with no browser. See docs/DAY3.md.
+// Day 3/4 — auto-inferred postcondition. Capture page state (a11y tree + form
+// values + validity), classify the change after a write, read the targeted
+// field directly for fill/type/select, and decide a write step's verdict.
+// Pure where it can be: `classify` and `evidenceOf` are functions of two
+// PageStates, unit-testable with no browser. See docs/DAY3.md, docs/DAY4.md §1.
 import type { Page } from "@browserbasehq/stagehand";
-import { fingerprint, safeRead, type Fingerprint } from "./session.js";
-import type { Verdict } from "./index.js";
+import {
+  fingerprint,
+  safeRead,
+  sameFingerprint,
+  type Confidence,
+  type Fingerprint,
+  type SessionEvidence,
+} from "./session.js";
+import type { DeclaredResult } from "./declaration.js";
+
+export type Verdict = "landed" | "did-not-land" | "inconclusive";
+export type { Confidence };
 
 export type PostReason =
   | "field-match"
@@ -20,9 +31,10 @@ export type PostReason =
   | "changed-unclassified"
   | "no-change"
   | "non-mutating"
-  | "unsettled";
-
-export type Confidence = "high" | "heuristic";
+  | "unsettled"
+  | "declared-met"
+  | "declared-unmet"
+  | "declared-unreadable";
 
 export interface FormValue {
   value: string; // passwords already stored as "<redacted:N>"
@@ -39,9 +51,14 @@ export interface PageState {
   pageId: string;
 }
 
-export interface Postcondition {
+export interface Outcome {
+  verdict: Verdict;
   reason: PostReason;
   confidence: Confidence;
+}
+
+export interface Postcondition extends Outcome {
+  auto: Outcome; // the auto-inferred outcome, kept even when a declaration decides
   urlChanged: boolean;
   pageSwitched: boolean;
   newPageUrl?: string;
@@ -50,17 +67,13 @@ export interface Postcondition {
   formsBefore: Record<string, FormValue>;
   formsAfter: Record<string, FormValue>;
   field?: { selector: string; expected: string; actual: string | null };
+  declared?: DeclaredResult[];
 }
 
-const EMPTY_FP: Fingerprint = {
-  href: "",
-  readyState: "",
-  bodyTextLength: 0,
-  elementCount: 0,
-  title: "",
-};
+const EMPTY_FP: Fingerprint = { href: "", readyState: "", bodyTextLength: 0, elementCount: 0, title: "" };
 
 export const redactLen = (s: string): string => `<redacted:${s.length}>`;
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Strip the `[n-m]` node-id prefix and indentation so diffs compare content. */
 export function normalizeTree(formattedTree: string): string[] {
@@ -70,7 +83,7 @@ export function normalizeTree(formattedTree: string): string[] {
     .filter(Boolean);
 }
 
-function multisetDiff(a: string[], b: string[]): string[] {
+export function multisetDiff(a: string[], b: string[]): string[] {
   const counts = new Map<string, number>();
   for (const x of b) counts.set(x, (counts.get(x) ?? 0) + 1);
   const out: string[] = [];
@@ -152,8 +165,7 @@ export async function captureState(page: Page): Promise<PageState> {
 }
 
 const ERROR_RX = /required|invalid|error|failed|incorrect|try again|must be|not (valid|allowed)/i;
-const CONFIRM_RX =
-  /thank|success|confirm|placed|saved|sent|submitted|complete|done|received|updated|created/i;
+const CONFIRM_RX = /thank|success|confirm|placed|saved|sent|submitted|complete|done|received|updated|created/i;
 
 const isEmptyValue = (fv: FormValue | undefined): boolean =>
   !fv || fv.value === "" || fv.value === "<redacted:0>";
@@ -163,71 +175,65 @@ function urlDelta(a: string, b: string): { changed: boolean; hashOnly: boolean }
   try {
     const ua = new URL(a);
     const ub = new URL(b);
-    const hashOnly =
-      ua.origin === ub.origin && ua.pathname === ub.pathname && ua.search === ub.search;
+    const hashOnly = ua.origin === ub.origin && ua.pathname === ub.pathname && ua.search === ub.search;
     return { changed: true, hashOnly };
   } catch {
     return { changed: true, hashOnly: false };
   }
 }
 
-/**
- * The §4 classification rows. Pure: a function of two PageStates plus whether a
- * tab switch happened. Returns the verdict, the reason, and the evidence block
- * (minus `field`/`newPageUrl`, which the wrapper adds). First match wins.
- */
-export function classify(
+/** The evidence block for a step: tree diff, url delta, forms. Pure. */
+export function evidenceOf(
   before: PageState,
   after: PageState,
   pageSwitched: boolean,
-): { verdict: Verdict; post: Postcondition } {
+  outcome: Outcome,
+): Postcondition {
   const added = multisetDiff(after.tree, before.tree);
   const removed = multisetDiff(before.tree, after.tree);
-  const { changed: urlChanged, hashOnly } = urlDelta(before.fp.href, after.fp.href);
-  const formsChanged = JSON.stringify(before.forms) !== JSON.stringify(after.forms);
-  const contentChanged = added.length > 0 || removed.length > 0 || formsChanged;
-
-  const base = (reason: PostReason, confidence: Confidence): Postcondition => ({
-    reason,
-    confidence,
-    urlChanged,
+  return {
+    ...outcome,
+    auto: outcome,
+    urlChanged: before.fp.href !== after.fp.href,
     pageSwitched,
     treeAdded: added.slice(0, 40),
     treeRemoved: removed.slice(0, 40),
     formsBefore: before.forms,
     formsAfter: after.forms,
-  });
-  const out = (verdict: Verdict, reason: PostReason, confidence: Confidence) => ({
-    verdict,
-    post: base(reason, confidence),
-  });
+  };
+}
+
+/**
+ * The §4 classification rows (docs/DAY3.md, revised by DAY4 R2). Pure: a
+ * function of two PageStates plus whether a tab switch happened. First match
+ * wins. Bare no-change is `inconclusive`; corroboration to did-not-land
+ * happens in sessionVerdict, where the obstruction is known.
+ */
+export function classify(before: PageState, after: PageState, pageSwitched: boolean): Outcome {
+  const added = multisetDiff(after.tree, before.tree);
+  const removed = multisetDiff(before.tree, after.tree);
+  const { changed: urlChanged, hashOnly } = urlDelta(before.fp.href, after.fp.href);
+  const formsChanged = JSON.stringify(before.forms) !== JSON.stringify(after.forms);
+  const contentChanged = added.length > 0 || removed.length > 0 || formsChanged;
+  const out = (verdict: Verdict, reason: PostReason, confidence: Confidence): Outcome => ({ verdict, reason, confidence });
 
   const hasRole = (role: string) => added.some((l) => new RegExp("^" + role + "\\b").test(l));
   const hasErrorText = added.some((l) => ERROR_RX.test(l));
   const hasConfirmText = added.some((l) => CONFIRM_RX.test(l));
 
-  // 1-2: navigation is the strongest landed signal.
   if (pageSwitched) return out("landed", "new-page", "high");
   if (urlChanged && !hashOnly) return out("landed", "navigated", "high");
 
-  // 3: native constraint validation blocked the submit (invisible to the tree).
   const activeInvalid = after.activeField ? after.forms[after.activeField]?.userInvalid : false;
   if (after.userInvalidCount > before.userInvalidCount || activeInvalid) {
     return out("did-not-land", "validation-error", "high");
   }
-  // 4: an alert with error text.
   if (hasRole("alert") && hasErrorText) return out("did-not-land", "validation-error", "high");
-  // 5: error text without a role.
-  if (hasErrorText && !hasRole("alert") && !hasRole("status")) {
-    return out("inconclusive", "error-text", "heuristic");
-  }
-  // 6: a prompt (dialog + buttons) is a question, not a confirmation.
+  if (hasErrorText && !hasRole("alert") && !hasRole("status")) return out("inconclusive", "error-text", "heuristic");
   if (hasRole("dialog") && hasRole("button")) return out("inconclusive", "prompt", "high");
-  // 7: confirmation-shaped.
   if (hasRole("status") || hasRole("alert") || hasRole("dialog") || hasConfirmText) {
     return out("landed", "confirmation", "heuristic");
   }
-  // 8: the form cleared.
   const nonEmptyBefore = Object.keys(before.forms).filter((k) => !isEmptyValue(before.forms[k]));
   const formStillPresent = Object.keys(after.forms).length > 0;
   if (
@@ -237,94 +243,223 @@ export function classify(
   ) {
     return out("landed", "form-cleared", "heuristic");
   }
-  // 9: a bare hash change that landed nothing.
   if (hashOnly && !contentChanged) return out("inconclusive", "hash-only-nav", "heuristic");
-  // 10: something changed, none of the above.
   if (contentChanged) return out("inconclusive", "changed-unclassified", "heuristic");
-  // 11: nothing changed at all.
-  return out("did-not-land", "no-change", "high");
+  return out("inconclusive", "no-change", "heuristic"); // R2: absence of feedback is not a mechanism
 }
-
-interface Action {
-  selector: string;
-  method?: string;
-  arguments?: string[];
-}
-
-export interface FieldResult {
-  verdict: Verdict;
-  reason: "field-match" | "field-mismatch";
-  confidence: "high";
-  field: { selector: string; expected: string; actual: string | null };
-  isPassword: boolean;
-}
-
-const SELECT_METHODS = new Set(["selectOption", "selectOptionFromDropdown"]);
 
 /**
- * Read the field the agent says it targeted and compare to what it says it
- * typed. `attempt` picks the selector and the expected value; the verdict comes
- * from a page read, never from agent_claim. Returns null (fall through to §4) if
- * the read fails for any reason.
+ * Day 2 obstruction rule + Day 4 destination gate + R2 corroboration, as a
+ * pure function of the verdict-so-far, the session read on the final page,
+ * and the reason. A high-confidence obstruction forces did-not-land; a
+ * heuristic one demotes landed to inconclusive; bare no-change plus ANY
+ * obstruction is the cookie-overlay signature → did-not-land.
  */
-export async function fieldPostcondition(page: Page, actions: Action[]): Promise<FieldResult | null> {
-  const a = actions[0];
-  if (!a?.method) return null;
-  const selector = a.selector;
-  const expected = a.arguments?.[0] ?? "";
-  const res = await safeRead(
+export function sessionVerdict(current: Verdict, session: SessionEvidence, reason?: PostReason): Verdict {
+  if (!session.obstruction) return current;
+  if (session.confidence === "high") return "did-not-land";
+  if (reason === "no-change") return "did-not-land";
+  if (current === "landed") return "inconclusive";
+  return current;
+}
+
+/**
+ * One in-page read of a selector's target (css | xpath= | bare xpath): its
+ * value (input / select), text, whether it exists, and whether it is a
+ * password field. Serialized into the page, so everything is inline (no outer
+ * helper calls — see AGENTS.md).
+ */
+export async function readTarget(
+  page: Page,
+  selector: string,
+): Promise<{ found: boolean; value: string; text: string; isPassword: boolean } | null> {
+  return safeRead(
     page,
     (sel) => {
       const s = sel as string;
+      const looksXPath = s.indexOf("xpath=") === 0 || s.charAt(0) === "/" || s.charAt(0) === "(";
       const clean = s.indexOf("xpath=") === 0 ? s.slice(6) : s;
       let el: unknown = null;
-      try {
-        const r = document.evaluate(clean, document, null, 9, null);
-        el = r.singleNodeValue;
-      } catch {
-        el = null;
-      }
-      if (!el) {
+      if (looksXPath) {
+        try {
+          el = document.evaluate(clean, document, null, 9, null).singleNodeValue;
+        } catch {
+          el = null;
+        }
+      } else {
         try {
           el = document.querySelector(s);
         } catch {
           el = null;
         }
       }
-      if (!el) return null;
+      if (!el) return { found: false, value: "", text: "", isPassword: false };
       const e = el as {
         tagName: string;
         value?: string;
+        textContent?: string | null;
         options?: { value: string; textContent: string | null }[];
         selectedIndex?: number;
         getAttribute(n: string): string | null;
       };
-      let value: string;
+      let value = "";
       if (e.tagName === "SELECT") {
         const o = e.options && e.selectedIndex != null ? e.options[e.selectedIndex] : null;
         value = o ? o.value || o.textContent || "" : "";
-      } else {
-        value = e.value ?? "";
+      } else if (typeof e.value === "string") {
+        value = e.value;
       }
-      const isPassword = (e.getAttribute("type") || "").toLowerCase() === "password";
-      return { value, isPassword };
+      return {
+        found: true,
+        value,
+        text: (e.textContent || "").trim(),
+        isPassword: (e.getAttribute("type") || "").toLowerCase() === "password",
+      };
     },
     selector,
   );
-  if (!res) return null;
+}
 
+export interface Action {
+  selector: string;
+  method?: string;
+  arguments?: string[];
+}
+
+export interface FieldResult extends Outcome {
+  reason: "field-match" | "field-mismatch";
+  field: { selector: string; expected: string; actual: string | null };
+  isPassword: boolean;
+}
+
+const SELECT_METHODS = new Set(["selectOption", "selectOptionFromDropdown"]);
+const FIELD_METHODS = new Set(["fill", "type", ...SELECT_METHODS]);
+// From Stagehand's action handlers (extension METHOD_HANDLER_MAP).
+const NON_MUTATING = new Set([
+  "hover", "scroll", "scrollTo", "scrollIntoView", "scrollByPixelOffset", "nextChunk", "prevChunk", "mouse.wheel",
+]);
+
+/**
+ * Read the field the agent says it targeted and compare to what it says it
+ * typed. `attempt` picks the selector and the expected value; the verdict
+ * comes from a page read. Returns null (fall through to classify) if the read
+ * fails for any reason.
+ */
+export async function fieldPostcondition(page: Page, action: Action): Promise<FieldResult | null> {
+  if (!action.method || !FIELD_METHODS.has(action.method)) return null;
+  const expected = action.arguments?.[0] ?? "";
+  const res = await readTarget(page, action.selector);
+  if (!res || !res.found) return null;
   const actual = res.value;
-  const match = SELECT_METHODS.has(a.method)
+  const match = SELECT_METHODS.has(action.method)
     ? actual === expected
     : expected === ""
       ? actual === ""
       : actual.includes(expected);
-
   return {
     verdict: match ? "landed" : "did-not-land",
     reason: match ? "field-match" : "field-mismatch",
     confidence: "high",
-    field: { selector, expected, actual },
+    field: { selector: action.selector, expected, actual },
     isPassword: res.isPassword,
   };
+}
+
+/**
+ * Poll the cheap fingerprint every `intervalMs` for up to `budgetMs`, calling
+ * `probe(changed)` each tick; return its first non-null result, else probe
+ * once more at the deadline. A null fingerprint (navigation in flight) counts
+ * as changed (DAY4 R3).
+ */
+export async function pollUntil<T>(
+  page: Page,
+  budgetMs: number,
+  probe: (changed: boolean, final: boolean) => Promise<T | null>,
+  intervalMs = 250,
+): Promise<T | null> {
+  const start = Date.now();
+  let last = await fingerprint(page);
+  while (Date.now() - start < budgetMs) {
+    await sleep(intervalMs);
+    const fp = await fingerprint(page);
+    const changed = !fp || !last || !sameFingerprint(fp, last);
+    if (fp) last = fp;
+    const r = await probe(changed, false);
+    if (r !== null) return r;
+  }
+  return probe(true, true);
+}
+
+export interface WriteDecision {
+  kind: "write" | "read";
+  post: Postcondition;
+  after: PageState;
+  isPassword: boolean;
+}
+
+const stricter = (a: Outcome, b: Outcome): Outcome => {
+  const rank: Record<Verdict, number> = { "did-not-land": 2, inconclusive: 1, landed: 0 };
+  return rank[b.verdict] > rank[a.verdict] ? b : a;
+};
+
+/**
+ * The write-step decision (DAY3 §8 precedence with DAY4 R1/R2). `waitMs` is
+ * the extended no-change budget; pass 0 when a declaration will poll instead.
+ */
+export async function decideWrite(
+  page: Page,
+  before: PageState,
+  firstAfter: PageState,
+  actions: Action[] | null,
+  pageSwitched: boolean,
+  settled: boolean,
+  waitMs: number,
+): Promise<WriteDecision> {
+  const methods = (actions ?? []).map((a) => a.method).filter(Boolean) as string[];
+  let after = firstAfter;
+
+  // §6 non-mutating: this was not a write.
+  if (methods.length > 0 && methods.every((m) => NON_MUTATING.has(m))) {
+    const o: Outcome = { verdict: "inconclusive", reason: "non-mutating", confidence: "heuristic" };
+    return { kind: "read", post: evidenceOf(before, after, pageSwitched, o), after, isPassword: false };
+  }
+
+  // §3 field writes: read each targeted field. R1: only a pure field-write
+  // step short-circuits; a mixed step also classifies and takes the stricter.
+  let field: FieldResult | null = null;
+  if (!pageSwitched && methods.length > 0 && FIELD_METHODS.has(methods[0])) {
+    field = await fieldPostcondition(page, actions![0]);
+  }
+  // Only the outcome triple goes into evidence: a FieldResult carries the
+  // plaintext expected/actual, which must not ride along as `auto`.
+  const triple = (o: Outcome): Outcome => ({ verdict: o.verdict, reason: o.reason, confidence: o.confidence });
+  const pureFieldStep = field !== null && methods.every((m) => FIELD_METHODS.has(m));
+  if (pureFieldStep) {
+    const post = evidenceOf(before, after, pageSwitched, triple(field!));
+    post.field = field!.field;
+    return { kind: "write", post, after, isPassword: field!.isPassword };
+  }
+
+  // §4 classification, with the §4.1 extended wait on a first-look no-change.
+  let auto = classify(before, after, pageSwitched);
+  if (auto.reason === "no-change" && waitMs > 0) {
+    const resolved = await pollUntil(page, waitMs, async (changed) => {
+      if (!changed) return null;
+      const state = await captureState(page);
+      const c = classify(before, state, false);
+      return c.reason === "no-change" ? null : { state, c };
+    });
+    if (resolved) {
+      after = resolved.state;
+      auto = resolved.c;
+    } else {
+      after = await captureState(page);
+      auto = classify(before, after, false);
+    }
+    if (auto.reason === "no-change" && !settled) auto = { verdict: "inconclusive", reason: "unsettled", confidence: "heuristic" };
+  }
+  if (field) auto = stricter(auto, triple(field)); // mixed fill+click: the field read is evidence, the stricter verdict wins
+  const post = evidenceOf(before, after, pageSwitched, auto);
+  if (field) post.field = field.field;
+  return { kind: "write", post, after, isPassword: field?.isPassword ?? false };
 }

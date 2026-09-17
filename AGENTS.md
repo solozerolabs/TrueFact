@@ -1,6 +1,6 @@
 # AGENTS.md — working in this repo
 
-TrueReplay is a TypeScript/npm wrapper around Stagehand that records what a browser agent did and computes an independent `landed / did-not-land / inconclusive` verdict per write by reading the live page. Read [SPEC.md](SPEC.md) (product), [docs/DAY2.md](docs/DAY2.md) (built: session detection, verified Stagehand facts), [docs/DAY3.md](docs/DAY3.md) (built: auto postcondition) and [docs/DAY4.md](docs/DAY4.md) (next: declared postconditions + nine Day 3 revisions — spec only, not built) before changing anything.
+TrueReplay is a TypeScript/npm wrapper around Stagehand that records what a browser agent did and computes an independent `landed / did-not-land / inconclusive` verdict per write by reading the live page. Read [SPEC.md](SPEC.md) (product), [docs/DAY2.md](docs/DAY2.md) (built: session detection, verified Stagehand facts), [docs/DAY3.md](docs/DAY3.md) (built: auto postcondition) and [docs/DAY4.md](docs/DAY4.md) (built: declared postconditions + nine Day 3 revisions) before changing anything. Next: Day 5 (grounding for `extract` against `snapshot().formattedTree`).
 
 Day 4 rules (see DAY4.md §0):
 - Declarations are **data** (`Declaration` tagged union), never callbacks. A callback can read `ActResult`; that is the agent's claim inside a verdict.
@@ -26,7 +26,7 @@ Day 3 facts that bite (all probed, see docs/DAY3.md §0):
 npm run build          # tsc → dist/
 npm test               # node --import tsx --test "test/*.test.ts"  (needs local Chrome; no LLM key)
 npm run probe          # scripts/probe-stagehand.mjs — API sanity vs installed Stagehand; run after any bump
-node scripts/probe-overlay-act.mjs      # one real act on a blocked submit; needs ANTHROPIC_API_KEY or OPENAI_API_KEY
+npm run probe:act      # one real act on a blocked submit; reads ANTHROPIC_API_KEY or OPENAI_API_KEY from a git-ignored .env
 ```
 
 Detector functions run inside `page.evaluate`, so Stagehand serializes their source: use plain loops and inline arrows, never a `.find(namedFunction)` reference (it silently returns nothing — see the login detector).

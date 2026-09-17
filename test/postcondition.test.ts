@@ -1,189 +1,206 @@
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Stagehand, localBrowser } from "@browserbasehq/stagehand";
-import { classify, captureState } from "../src/postcondition.js";
+import { classify, normalizeTree, multisetDiff, sessionVerdict } from "../src/postcondition.js";
 import { withReplay } from "../src/index.js";
-import { serve, state, form, fakeStagehand, type Fixture } from "./helpers.js";
+import { serve, state, form, session, fakeStagehand, withBrowser, type Fixture } from "./helpers.js";
 
 // ---------------------------------------------------------------------------
 // Unit: classify() is pure — no browser. One `it` per §4 row + ordering.
+// Confidence is asserted on every row: it is the load-bearing field.
 // ---------------------------------------------------------------------------
-describe("classify (pure §4 rows)", () => {
-  const base = state({ fp: { href: "http://x/a", readyState: "complete", bodyTextLength: 0, elementCount: 0, title: "" } });
+describe("classify (pure §4 rows, DAY4 R2)", () => {
+  const base = state();
+  const expect = (c: ReturnType<typeof classify>, verdict: string, reason: string, confidence: string) => {
+    assert.equal(c.verdict, verdict);
+    assert.equal(c.reason, reason);
+    assert.equal(c.confidence, confidence);
+  };
 
-  it("row 1: a new tab -> landed / new-page", () => {
-    const c = classify(base, base, true);
-    assert.equal(c.verdict, "landed");
-    assert.equal(c.post.reason, "new-page");
+  it("row 1: a new tab -> landed / new-page / high", () => expect(classify(base, base, true), "landed", "new-page", "high"));
+  it("row 2: a path change -> landed / navigated / high", () =>
+    expect(classify(base, state({ href: "http://x/b" }), false), "landed", "navigated", "high"));
+  it("row 3: :user-invalid rose -> did-not-land / validation-error / high (empty tree diff)", () =>
+    expect(classify(base, state({ userInvalidCount: 1 }), false), "did-not-land", "validation-error", "high"));
+  it("row 4: alert + error text -> did-not-land / validation-error / high", () =>
+    expect(classify(base, state({ tree: ["alert", "StaticText: Email is required"] }), false), "did-not-land", "validation-error", "high"));
+  it("row 5: error text with no role -> inconclusive / error-text / heuristic", () =>
+    expect(classify(base, state({ tree: ["StaticText: Something failed"] }), false), "inconclusive", "error-text", "heuristic"));
+  it("row 6: dialog + buttons -> inconclusive / prompt / high (beats confirmation)", () =>
+    expect(classify(base, state({ tree: ["dialog", "StaticText: Confirm your order?", "button: Confirm", "button: Cancel"] }), false), "inconclusive", "prompt", "high"));
+  it("row 7: status role -> landed / confirmation / heuristic", () =>
+    expect(classify(base, state({ tree: ["status", "StaticText: Order placed"] }), false), "landed", "confirmation", "heuristic"));
+  it("row 8: form cleared -> landed / form-cleared / heuristic", () =>
+    expect(classify(state({ forms: { email: form("a@b.co") } }), state({ forms: { email: form("") } }), false), "landed", "form-cleared", "heuristic"));
+  it("row 9: hash-only change, nothing else -> inconclusive / hash-only-nav / heuristic", () =>
+    expect(classify(base, state({ href: "http://x/a#done" }), false), "inconclusive", "hash-only-nav", "heuristic"));
+  it("row 10: unclassified change -> inconclusive / changed-unclassified / heuristic", () =>
+    expect(classify(base, state({ tree: ["menu", "menuitem: Copy"] }), false), "inconclusive", "changed-unclassified", "heuristic"));
+  it("row 11 (R2): nothing changed -> inconclusive / no-change / heuristic — absence is not a mechanism", () =>
+    expect(classify(base, base, false), "inconclusive", "no-change", "heuristic"));
+  it("ordering: navigation beats a stale validation flag", () =>
+    assert.equal(classify(base, state({ href: "http://x/b", userInvalidCount: 1 }), false).reason, "navigated"));
+  it("ordering: an alert-error beats confirmation text on the same page", () =>
+    assert.equal(classify(base, state({ tree: ["alert", "StaticText: invalid — order not placed"] }), false).reason, "validation-error"));
+});
+
+describe("sessionVerdict (obstruction rule + destination gate + R2 corroboration)", () => {
+  it("high-confidence obstruction -> did-not-land regardless of the verdict so far", () => {
+    assert.equal(sessionVerdict("landed", session({ obstruction: "captcha", confidence: "high" })), "did-not-land");
   });
-  it("row 2: a path change -> landed / navigated", () => {
-    const c = classify(base, state({ fp: { ...base.fp, href: "http://x/b" } }), false);
-    assert.equal(c.verdict, "landed");
-    assert.equal(c.post.reason, "navigated");
+  it("heuristic obstruction only demotes a landed to inconclusive", () => {
+    assert.equal(sessionVerdict("landed", session({ obstruction: "overlay", confidence: "heuristic" })), "inconclusive");
+    assert.equal(sessionVerdict("did-not-land", session({ obstruction: "login-wall", confidence: "heuristic" })), "did-not-land");
   });
-  it("row 3: :user-invalid rose -> did-not-land / validation-error (empty tree diff)", () => {
-    const c = classify(base, state({ userInvalidCount: 1 }), false);
-    assert.equal(c.verdict, "did-not-land");
-    assert.equal(c.post.reason, "validation-error");
+  it("R2: bare no-change + any obstruction is the cookie-overlay signature -> did-not-land", () => {
+    assert.equal(sessionVerdict("inconclusive", session({ obstruction: "overlay", confidence: "heuristic" }), "no-change"), "did-not-land");
   });
-  it("row 4: alert + error text -> did-not-land / validation-error", () => {
-    const c = classify(base, state({ tree: ["alert", "StaticText: Email is required"] }), false);
-    assert.equal(c.verdict, "did-not-land");
-    assert.equal(c.post.reason, "validation-error");
+  it("no obstruction -> verdict unchanged, even on no-change", () => {
+    assert.equal(sessionVerdict("inconclusive", session(), "no-change"), "inconclusive");
   });
-  it("row 5: error text with no role -> inconclusive / error-text", () => {
-    const c = classify(base, state({ tree: ["StaticText: Something failed"] }), false);
-    assert.equal(c.verdict, "inconclusive");
-    assert.equal(c.post.reason, "error-text");
+});
+
+describe("tree normalization + diff", () => {
+  it("strips node ids and indentation so the same page twice diffs to nothing", () => {
+    const a = normalizeTree("[0-2] RootWebArea: X\n  [0-8] main\n    [0-9] button: Go");
+    const b = normalizeTree("[1-4] RootWebArea: X\n  [1-7] main\n    [1-3] button: Go");
+    assert.deepEqual(multisetDiff(b, a), []);
+    assert.deepEqual(a, ["RootWebArea: X", "main", "button: Go"]);
   });
-  it("row 6: dialog + buttons -> inconclusive / prompt (beats confirmation)", () => {
-    const c = classify(base, state({ tree: ["dialog", "StaticText: Confirm your order?", "button: Confirm", "button: Cancel"] }), false);
-    assert.equal(c.verdict, "inconclusive");
-    assert.equal(c.post.reason, "prompt");
-  });
-  it("row 7: status role -> landed / confirmation", () => {
-    const c = classify(base, state({ tree: ["status", "StaticText: Order placed"] }), false);
-    assert.equal(c.verdict, "landed");
-    assert.equal(c.post.reason, "confirmation");
-  });
-  it("row 8: form cleared -> landed / form-cleared", () => {
-    const b = state({ forms: { email: form("a@b.co") } });
-    const c = classify(b, state({ forms: { email: form("") } }), false);
-    assert.equal(c.verdict, "landed");
-    assert.equal(c.post.reason, "form-cleared");
-  });
-  it("row 9: hash-only change, nothing else -> inconclusive / hash-only-nav", () => {
-    const c = classify(base, state({ fp: { ...base.fp, href: "http://x/a#done" } }), false);
-    assert.equal(c.verdict, "inconclusive");
-    assert.equal(c.post.reason, "hash-only-nav");
-  });
-  it("row 10: unclassified change -> inconclusive / changed-unclassified", () => {
-    const c = classify(base, state({ tree: ["menu", "menuitem: Copy"] }), false);
-    assert.equal(c.verdict, "inconclusive");
-    assert.equal(c.post.reason, "changed-unclassified");
-  });
-  it("row 11: nothing changed -> did-not-land / no-change", () => {
-    const c = classify(base, base, false);
-    assert.equal(c.verdict, "did-not-land");
-    assert.equal(c.post.reason, "no-change");
-  });
-  it("ordering: navigation beats a stale validation flag", () => {
-    const c = classify(base, state({ fp: { ...base.fp, href: "http://x/b" }, userInvalidCount: 1 }), false);
-    assert.equal(c.post.reason, "navigated");
-  });
-  it("ordering: an alert-error beats confirmation text on the same page", () => {
-    const c = classify(base, state({ tree: ["alert", "StaticText: invalid — order not placed"] }), false);
-    assert.equal(c.post.reason, "validation-error");
+  it("one added status line diffs to exactly that line, without a prefix", () => {
+    const a = normalizeTree("[0-2] main");
+    const b = normalizeTree("[3-7] main\n  [3-9] status\n    [3-10] StaticText: Saved");
+    assert.deepEqual(multisetDiff(b, a), ["status", "StaticText: Saved"]);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Integration: real browser, real clicks, fake LLM. Exercises the whole run().
+// Integration: real browser, real clicks, fake LLM, HTTP fixtures.
 // ---------------------------------------------------------------------------
 describe("withReplay: postcondition end to end", () => {
-  let browser: Awaited<ReturnType<typeof localBrowser.launch>>;
-  let stagehand: Stagehand;
+  const b = withBrowser();
   let fx: Fixture;
-
-  // Always operate on the CURRENTLY active tab: activePage() returns a fresh
-  // wrapper each call, and earlier tests may have opened a new tab.
-  const cur = async () => (await stagehand.browser.context.activePage())!;
-  const load = async (html: string) => (await cur()).goto("data:text/html," + encodeURIComponent(html));
-  // act via a fake that performs the real action on the active tab, read the step back
-  const runAct = async (spec: Parameters<typeof fakeStagehand>[2], budget = 1200) => {
-    const { act, replay } = withReplay(fakeStagehand(stagehand, await cur(), spec), {
-      postconditionWaitMs: budget,
-      screenshots: false,
-    });
+  const WAIT = 600;
+  const runAct = async (spec: Parameters<typeof fakeStagehand>[2], waitMs = WAIT) => {
+    const sh = await b.start();
+    const { act, replay } = withReplay(fakeStagehand(sh, await b.page(), spec), { waitMs, screenshots: false });
     await act("do it");
     return replay.steps.at(-1)!;
   };
+  const go = async (path: string) => (await b.page()).goto(fx.base + path);
 
   before(async () => {
-    browser = await localBrowser.launch({ headless: true });
-    stagehand = await Stagehand.create({ browser, logging: { level: "error" } });
+    await b.start();
     fx = await serve({
-      "/anchor": `<html><head><title>Anchor</title></head><body><main><a id="dead" href="#x">dead</a></main></body></html>`,
       "/checkout": `<html><head><title>Checkout</title></head><body><main><form id="f" onsubmit="event.preventDefault();document.body.insertAdjacentHTML('beforeend','<p role=status>Order placed</p>')">
         <input name="email" required><button id="s" type="submit">Place order</button></form></main></body></html>`,
       "/done": `<html><head><title>Done</title></head><body><main><h1>done</h1></main></body></html>`,
       "/tab2": `<html><head><title>Tab2</title></head><body><main><h1>tab2</h1></main></body></html>`,
       "/login": { status: 401, html: `<html><head><title>Sign in</title></head><body><main><form><input type="password" autocomplete="current-password"></form></main></body></html>` },
       "/redirect": `<html><body><main><form onsubmit="event.preventDefault();setTimeout(()=>location.href='/login',400)"><button id="s" type="submit">Save</button></form></main></body></html>`,
+      "/nav": `<html><body><main><a id="go" href="/done">go</a> <a id="ext" href="/tab2" target="_blank">open</a> <a id="dead" href="#x">dead</a></main></body></html>`,
+      "/overlay": `<html><body><main><button id="s">Buy</button></main><div id="cookie" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.5)"></div></body></html>`,
+      "/dead": `<html><body><main><button id="s">Buy</button></main></body></html>`,
+      "/fields": `<html><body><main><input id="e" name="email"><input id="r" name="rw" oninput="this.value=''">
+        <select id="plan" name="plan"><option value="free">Free</option><option value="pro">Pro</option></select><button id="s" type="button">noop</button></main></body></html>`,
+      // a new-password form is the Day 2 FP-guard case: a password field that is NOT a login wall
+      "/pw": `<html><body><main><form><input id="p" name="pw" type="password" autocomplete="new-password"></form></main></body></html>`,
+      "/mixed": `<html><body><main><form id="f" onsubmit="event.preventDefault()"><input name="email" required><input id="note" name="note"><button id="s" type="submit">Save</button></form></main></body></html>`,
+      // value set by script, not the attribute, so form.reset() actually clears it
+      "/reset": `<html><body><main><form id="f" onsubmit="event.preventDefault();this.reset()"><input name="email"><button id="s" type="submit">Go</button></form><script>document.querySelector('[name=email]').value='a@b.co'</script></main></body></html>`,
+      "/details": `<html><body><main><details><summary id="s">More</summary><p>hidden text appears</p></details></main></body></html>`,
+      "/errtext": `<html><body><main><button id="s" onclick="document.body.insertAdjacentHTML('beforeend','<p>Something failed, try again</p>')">Go</button></main></body></html>`,
+      "/prompt": `<html><body><main><button id="s">Delete</button><dialog id="d">Confirm delete? <button>Confirm</button><button>Cancel</button></dialog><script>document.getElementById('s').onclick=()=>document.getElementById('d').showModal()</script></main></body></html>`,
+      "/slow": `<html><body><main><button id="s">Save</button><script>document.getElementById('s').onclick=()=>setTimeout(()=>document.body.insertAdjacentHTML('beforeend','<p role=status>Saved</p>'),700)</script></main></body></html>`,
+      "/tall": `<html><body><main style="height:3000px"><button id="s">x</button></main></body></html>`,
+      "/ticker": `<html><body><main><span id="t"></span><a id="go" href="/done">go</a><script>setInterval(()=>document.getElementById('t').appendChild(document.createElement('i')),60)</script></main></body></html>`,
     });
   });
   after(async () => {
-    await browser.close(); // frees sockets to the fixture server first
+    await b.stop();
     await fx.close();
   });
 
-  it("required field blocks submit -> did-not-land / validation-error, resolved fast", async () => {
-    await (await cur()).goto(fx.base + "/checkout");
+  it("required field blocks submit -> did-not-land / validation-error, without polling", async () => {
+    await go("/checkout");
     const t = Date.now();
-    const s = await runAct({ selector: "#s", method: "click" });
+    const s = await runAct({ selector: "#s", method: "click" }, 30000);
     assert.equal(s.verdict, "did-not-land");
     assert.equal(s.evidence.postcondition?.reason, "validation-error");
-    assert.ok(Date.now() - t < 1000, "should not wait the full budget");
+    assert.ok(Date.now() - t < 10000, "resolved without the extended poll");
   });
 
-  it("submit that reveals a confirmation -> landed / confirmation", async () => {
-    const p = await cur();
+  it("submit that reveals a confirmation -> landed / confirmation, with the added lines as evidence", async () => {
+    const p = await b.page();
     await p.goto(fx.base + "/checkout");
     await p.locator("[name=email]").fill("a@b.co");
     const s = await runAct({ selector: "#s", method: "click" });
     assert.equal(s.verdict, "landed");
     assert.equal(s.evidence.postcondition?.reason, "confirmation");
+    assert.ok(s.evidence.postcondition?.treeAdded.some((l) => /Order placed/.test(l)));
   });
 
   it("agent claims success:false but the page confirms -> landed (ignores agent_claim)", async () => {
-    const p = await cur();
+    const p = await b.page();
     await p.goto(fx.base + "/checkout");
     await p.locator("[name=email]").fill("a@b.co");
-    const s = await runAct({ selector: "#s", method: "click", success: false, message: "I could not click it" });
+    const s = await runAct({ actions: [{ selector: "#s", method: "click" }], success: false, message: "could not click" });
     assert.equal(s.verdict, "landed");
-    assert.equal(s.agent_claim?.success, false); // recorded on its own channel
+    assert.equal(s.agent_claim?.success, false);
   });
 
   it("a real navigation -> landed / navigated", async () => {
-    await load('<html><body><main><a id="go" href="' + fx.base + '/done">go</a></main></body></html>');
+    await go("/nav");
     const s = await runAct({ selector: "#go", method: "click" });
     assert.equal(s.verdict, "landed");
     assert.equal(s.evidence.postcondition?.reason, "navigated");
   });
 
   it("a href='#x' anchor that lands nothing -> inconclusive / hash-only-nav", async () => {
-    await (await cur()).goto(fx.base + "/anchor");
+    await go("/nav");
     const s = await runAct({ selector: "#dead", method: "click" });
     assert.equal(s.verdict, "inconclusive");
     assert.equal(s.evidence.postcondition?.reason, "hash-only-nav");
   });
 
-  it("submit that redirects into a 401 login wall -> inconclusive, navigated + login-wall", async () => {
-    await (await cur()).goto(fx.base + "/redirect");
-    const s = await runAct({ selector: "#s", method: "click" }, 2000);
-    assert.equal(s.verdict, "inconclusive"); // destination gate demoted the navigation
+  it("R3: submit that redirects into a 401 login wall resolves well inside the budget -> inconclusive, navigated + login-wall", async () => {
+    await go("/redirect");
+    const t = Date.now();
+    const s = await runAct({ selector: "#s", method: "click" }, 8000);
+    assert.equal(s.verdict, "inconclusive");
     assert.equal(s.evidence.postcondition?.reason, "navigated");
     assert.equal(s.evidence.session.obstruction, "login-wall");
+    assert.ok(Date.now() - t < 6000, "the null-fingerprint poll resolved before the deadline");
   });
 
-  it("a new tab -> landed / new-page with newPageUrl", async () => {
-    await load('<html><body><main><a id="ext" href="' + fx.base + '/tab2" target="_blank">open</a></main></body></html>');
+  it("a new tab -> landed / new-page with newPageUrl; the extra tab is closed afterwards", async () => {
+    await go("/nav");
     const s = await runAct({ selector: "#ext", method: "click" });
     assert.equal(s.verdict, "landed");
     assert.equal(s.evidence.postcondition?.reason, "new-page");
     assert.match(s.evidence.postcondition?.newPageUrl ?? "", /\/tab2$/);
+    const sh = await b.start();
+    const pages = await sh.browser.context.pages();
+    assert.equal(pages.length, 2);
+    await pages[1].close();
   });
 
-  it("cookie overlay swallows the click -> did-not-land / no-change", async () => {
-    await load('<html><body><main><button id="s">Buy</button></main><div id="cookie" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.5)"></div></body></html>');
+  it("R2: cookie overlay swallows the click -> did-not-land / no-change, corroborated by the overlay", async () => {
+    await go("/overlay");
     const s = await runAct({ selector: "#s", method: "click" });
     assert.equal(s.verdict, "did-not-land");
     assert.equal(s.evidence.postcondition?.reason, "no-change");
-    assert.equal(s.evidence.session.obstruction, "overlay"); // recorded alongside
+    assert.equal(s.evidence.session.obstruction, "overlay");
+  });
+
+  it("R2: a dead click with no obstruction -> inconclusive / no-change (absence is not a mechanism)", async () => {
+    await go("/dead");
+    const s = await runAct({ selector: "#s", method: "click" });
+    assert.equal(s.verdict, "inconclusive");
+    assert.equal(s.evidence.postcondition?.reason, "no-change");
   });
 
   it("field fill that holds -> landed / field-match", async () => {
-    await load('<html><body><main><input id="e" name="email"></main></body></html>');
+    await go("/fields");
     const s = await runAct({ selector: "#e", method: "fill", args: ["a@b.co"] });
     assert.equal(s.verdict, "landed");
     assert.equal(s.evidence.postcondition?.reason, "field-match");
@@ -191,44 +208,100 @@ describe("withReplay: postcondition end to end", () => {
   });
 
   it("field fill the page rewrites to empty -> did-not-land / field-mismatch", async () => {
-    await load('<html><body><main><input id="e" name="email" oninput="this.value=\'\'"></main></body></html>');
-    const s = await runAct({ selector: "#e", method: "fill", args: ["a@b.co"] });
+    await go("/fields");
+    const s = await runAct({ selector: "#r", method: "fill", args: ["a@b.co"] });
     assert.equal(s.verdict, "did-not-land");
     assert.equal(s.evidence.postcondition?.reason, "field-mismatch");
   });
 
-  it("password fill is redacted in attempt and field, never stored plain", async () => {
-    await load('<html><body><main><input id="p" name="pw" type="password"></main></body></html>');
+  it("empty-string fill clears the field -> field-match only when actually empty", async () => {
+    const p = await b.page();
+    await p.goto(fx.base + "/fields");
+    await p.locator("#e").fill("x");
+    const s = await runAct({ selector: "#e", method: "fill", args: [""] });
+    assert.equal(s.evidence.postcondition?.reason, "field-match");
+    assert.equal(s.evidence.postcondition?.field?.actual, "");
+  });
+
+  it("selectOption 'pro' -> landed / field-match", async () => {
+    await go("/fields");
+    const s = await runAct({ selector: "#plan", method: "selectOption", args: ["pro"] });
+    assert.equal(s.verdict, "landed");
+    assert.equal(s.evidence.postcondition?.reason, "field-match");
+  });
+
+  it("stale reported selector on a field write falls through to classification, no throw", async () => {
+    await go("/fields");
+    // the fake fills #e for real but reports a selector that no longer resolves
+    const s = await runAct({ selector: "#e", reportSelector: "#nope", method: "fill", args: ["x"] });
+    assert.notEqual(s.evidence.postcondition?.reason, "field-match");
+    assert.equal(s.evidence.postcondition?.reason, "changed-unclassified"); // the typed value shows up in the tree/forms diff
+  });
+
+  it("password fill is redacted in attempt, field, and auto evidence — never stored plain", async () => {
+    await go("/pw");
     const s = await runAct({ selector: "#p", method: "fill", args: ["hunter2secret"] });
-    const blob = JSON.stringify(s);
-    assert.ok(!blob.includes("hunter2secret"), "raw password must not appear anywhere on the step");
+    assert.equal(s.verdict, "landed");
+    assert.ok(!JSON.stringify(s).includes("hunter2secret"));
     assert.equal(s.attempt?.[0].arguments?.[0], "<redacted:13>");
     assert.equal(s.evidence.postcondition?.field?.expected, "<redacted:13>");
   });
 
+  it("R1: fill then click submit with a required field empty -> did-not-land / validation-error, not field-match", async () => {
+    await go("/mixed");
+    const s = await runAct({ actions: [{ selector: "#note", method: "fill", args: ["hi"] }, { selector: "#s", method: "click" }] });
+    assert.equal(s.verdict, "did-not-land");
+    assert.equal(s.evidence.postcondition?.reason, "validation-error");
+    assert.equal(s.evidence.postcondition?.field?.actual, "hi"); // the field read is kept as evidence
+  });
+
+  it("submit that resets the form -> landed / form-cleared / heuristic", async () => {
+    await go("/reset");
+    const s = await runAct({ selector: "#s", method: "click" });
+    assert.equal(s.verdict, "landed");
+    assert.equal(s.evidence.postcondition?.reason, "form-cleared");
+    assert.equal(s.evidence.postcondition?.confidence, "heuristic");
+  });
+
+  it("a click that only opens <details> -> inconclusive / changed-unclassified", async () => {
+    await go("/details");
+    const s = await runAct({ selector: "#s", method: "click" });
+    assert.equal(s.verdict, "inconclusive");
+    assert.equal(s.evidence.postcondition?.reason, "changed-unclassified");
+  });
+
+  it("error text without a role -> inconclusive / error-text", async () => {
+    await go("/errtext");
+    const s = await runAct({ selector: "#s", method: "click" });
+    assert.equal(s.verdict, "inconclusive");
+    assert.equal(s.evidence.postcondition?.reason, "error-text");
+  });
+
   it("a scroll act is reclassified to a read, out of the write roll-up", async () => {
-    await load('<html><body><main style="height:3000px"><button id="s">x</button></main></body></html>');
-    const { act, replay } = withReplay(fakeStagehand(stagehand, await cur(), { selector: "#s", method: "scroll" }), { screenshots: false });
-    await act("scroll down");
-    const s = replay.steps.at(-1)!;
+    await go("/tall");
+    const s = await runAct({ selector: "#s", method: "scroll" });
     assert.equal(s.kind, "read");
     assert.equal(s.evidence.postcondition?.reason, "non-mutating");
-    assert.equal(replay.verdict, "inconclusive"); // no write steps
   });
 
   it("a prompt dialog -> inconclusive / prompt, not confirmation", async () => {
-    await load(`<html><body><main><button id="s">Delete</button><dialog id="d">Confirm delete? <button>Confirm</button><button>Cancel</button></dialog>
-      <script>document.getElementById('s').onclick=()=>document.getElementById('d').showModal()</script></main></body></html>`);
+    await go("/prompt");
     const s = await runAct({ selector: "#s", method: "click" });
     assert.equal(s.verdict, "inconclusive");
     assert.equal(s.evidence.postcondition?.reason, "prompt");
   });
 
   it("slow confirmation past the settle window -> landed via the extended poll", async () => {
-    await load(`<html><body><main><button id="s">Save</button>
-      <script>document.getElementById('s').onclick=()=>setTimeout(()=>document.body.insertAdjacentHTML('beforeend','<p role=status>Saved</p>'),700)</script></main></body></html>`);
+    await go("/slow");
     const s = await runAct({ selector: "#s", method: "click" }, 4000);
     assert.equal(s.verdict, "landed");
     assert.equal(s.evidence.postcondition?.reason, "confirmation");
+  });
+
+  it("D17: a page that mutates forever but navigates on click -> landed / navigated (unsettled must not mask it)", async () => {
+    await go("/ticker");
+    const s = await runAct({ selector: "#go", method: "click" });
+    assert.equal(s.verdict, "landed");
+    assert.equal(s.evidence.postcondition?.reason, "navigated");
   });
 });

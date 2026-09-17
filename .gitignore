@@ -2,3 +2,4 @@ node_modules/
 dist/
 .truereplay/
 *.log
+.env

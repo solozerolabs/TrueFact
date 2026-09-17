@@ -4,7 +4,7 @@ Replay what your browser agent actually did — and get an independent verdict o
 
 The gap between "agent said done" and "page says done" is the product.
 
-> **Status: Days 1–3 of a 7-day MVP built; Day 4 specified.** Session-state detection ([docs/DAY2.md](docs/DAY2.md)) and the auto-inferred postcondition ([docs/DAY3.md](docs/DAY3.md)) ship with 51 hermetic tests. Declared postconditions and nine Day 3 revisions are specified in [docs/DAY4.md](docs/DAY4.md). Roadmap in [SPEC.md](SPEC.md).
+> **Status: Days 1–4 of a 7-day MVP built.** Session-state detection ([docs/DAY2.md](docs/DAY2.md)), the auto-inferred postcondition ([docs/DAY3.md](docs/DAY3.md)) and declared postconditions ([docs/DAY4.md](docs/DAY4.md)) ship with 92 hermetic tests (~12 s, real Chrome, no LLM). Roadmap in [SPEC.md](SPEC.md).
 
 ## Benchmark
 
@@ -41,7 +41,21 @@ console.log(replay.steps);   // per-step: kind, action, verdict, evidence, attem
 console.log(replay.verdict); // per-run over write steps: landed | did-not-land | inconclusive
 ```
 
-Each write step's `evidence.postcondition.reason` says *why* — `confirmation`, `navigated`, `form-cleared`, `field-match` → `landed`; `validation-error`, `no-change` → `did-not-land`; `prompt`, `changed-unclassified`, `hash-only-nav` → `inconclusive`. Session obstructions (login wall, CAPTCHA, cookie overlay) and passwords redacted are folded in automatically. See [docs/DAY3.md](docs/DAY3.md).
+Each write step's `evidence.postcondition.reason` says *why* — `confirmation`, `navigated`, `form-cleared`, `field-match` → `landed`; `validation-error`, or `no-change` under a cookie overlay / login wall → `did-not-land`; `prompt`, `changed-unclassified`, `hash-only-nav`, bare `no-change` → `inconclusive`. Session obstructions and password redaction are automatic. See [docs/DAY3.md](docs/DAY3.md).
+
+For the writes that matter, declare what "landed" means — data, never a callback:
+
+```ts
+await act("click 'Place order'", {
+  expect: [
+    { kind: "text", matches: /Order #\d+/, role: "status" },  // a11y-tree line under a status role
+    { kind: "element", selector: "#pay", absent: true },       // negations only tighten
+  ],
+});
+await replay.finalize({ expect: { kind: "url", matches: "/thank-you" } }); // run-level; can only demote
+```
+
+Unmet → `did-not-land`. Met lifts only the auto default's uncertain outcomes and never overrides a validation error or an obstruction. Vacuous declarations throw before the write. One shared `waitMs` budget (default 5 s), read-only retries. See [docs/DAY4.md](docs/DAY4.md).
 
 ## The rule
 

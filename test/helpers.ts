@@ -1,9 +1,13 @@
 // Shared test infrastructure. Fixtures that navigate, redirect, open tabs, or
 // need an HTTP status must be served over http:// — Chrome refuses script
-// navigation to data: URLs and a data: tab never reports a URL (docs/DAY3.md §0).
+// navigation to data: URLs and a data: tab never reports a URL. A locator
+// action also costs ~1 s on a data: page vs ~9 ms over HTTP, so everything
+// integration-level goes through serve().
 import { createServer, type Server } from "node:http";
-import type { Page, Stagehand } from "@browserbasehq/stagehand";
+import { Stagehand, localBrowser, type Page } from "@browserbasehq/stagehand";
 import type { PageState, FormValue } from "../src/postcondition.js";
+import type { SessionEvidence } from "../src/session.js";
+import type { Step } from "../src/index.js";
 
 type Route = string | { status?: number; html: string };
 
@@ -26,61 +30,108 @@ export async function serve(routes: Record<string, Route>): Promise<Fixture> {
     base: `http://127.0.0.1:${port}`,
     close: () =>
       new Promise<void>((resolve) => {
-        // A browser tab left open on a fixture holds a keep-alive socket, which
-        // would make server.close() hang until the browser closes.
-        server.closeAllConnections?.();
+        server.closeAllConnections?.(); // a tab left on a fixture holds a keep-alive socket
         server.close(() => resolve());
       }),
   };
 }
 
-/** Build a PageState for pure classify() unit tests. */
-export function state(over: Partial<PageState> = {}): PageState {
+/** One headless Chrome + model-less Stagehand per test file, lazily. */
+export function withBrowser() {
+  let browser: Awaited<ReturnType<typeof localBrowser.launch>> | null = null;
+  let stagehand: Stagehand | null = null;
   return {
-    fp: { href: "http://x/a", readyState: "complete", bodyTextLength: 0, elementCount: 0, title: "" },
+    async start(): Promise<Stagehand> {
+      if (!stagehand) {
+        browser = await localBrowser.launch({ headless: true });
+        stagehand = await Stagehand.create({ browser, logging: { level: "error" } });
+      }
+      return stagehand;
+    },
+    async page(): Promise<Page> {
+      const sh = await this.start();
+      return (await sh.browser.context.activePage())!; // fresh wrapper each call; always the live tab
+    },
+    async stop(): Promise<void> {
+      await browser?.close(); // close the browser BEFORE any fixture server
+      browser = null;
+      stagehand = null;
+    },
+  };
+}
+
+/** Build a PageState for pure unit tests. `state({ href })` is the common case. */
+export function state(over: Partial<PageState> & { href?: string } = {}): PageState {
+  const { href, ...rest } = over;
+  return {
+    fp: { href: href ?? "http://x/a", readyState: "complete", bodyTextLength: 0, elementCount: 0, title: "" },
     tree: [],
     forms: {},
     userInvalidCount: 0,
     activeField: null,
     pageId: "",
-    ...over,
+    ...rest,
   };
 }
 
-export const form = (value: string, over: Partial<FormValue> = {}): FormValue => ({
-  value,
-  userInvalid: false,
+export const form = (value: string, over: Partial<FormValue> = {}): FormValue => ({ value, userInvalid: false, ...over });
+
+export const session = (over: Partial<SessionEvidence> = {}): SessionEvidence => ({
+  obstruction: null,
+  confidence: "high",
+  detail: "",
+  checked: ["blank", "captcha", "login-wall", "overlay"],
+  ...over,
+});
+
+export const step = (over: Partial<Step> = {}): Step => ({
+  kind: "write",
+  action: "act: x",
+  declaration: "auto",
+  verdict: "inconclusive",
+  evidence: { before: null, after: null, settled: true, session: session() },
+  attempt: null,
+  agent_claim: null,
+  timestamp: "",
   ...over,
 });
 
 export interface ActionSpec {
-  selector: string;
+  selector: string; // where the fake actually performs the action
+  reportSelector?: string; // what it REPORTS in actions[] (simulates a stale xpath after a re-render)
   method?: string;
   args?: string[];
+}
+
+export interface FakeSpec {
+  actions: ActionSpec[]; // performed in order, all reported
   success?: boolean;
   message?: string;
 }
 
 /**
- * A duck-typed Stagehand whose `act` performs a REAL locator action on the page
+ * A duck-typed Stagehand whose `act` performs REAL locator actions on the page
  * and returns an ActResult-shaped result. The only fake is the LLM; the browser,
- * the click/fill, and every page read are real.
+ * the clicks/fills, and every page read are real.
  */
-export function fakeStagehand(stagehand: Stagehand, page: Page, spec: ActionSpec): Stagehand {
+export function fakeStagehand(stagehand: Stagehand, page: Page, spec: ActionSpec | FakeSpec): Stagehand {
+  const fs: FakeSpec = "actions" in spec ? spec : { actions: [spec] };
   return {
     browser: stagehand.browser,
     act: async () => {
-      const loc = page.locator(spec.selector);
-      if (spec.method === "fill") await loc.fill(spec.args?.[0] ?? "");
-      else if (spec.method === "type") await loc.type(spec.args?.[0] ?? "");
-      else if (spec.method === "selectOption") await loc.selectOption(spec.args?.[0] ?? "");
-      else if (!spec.method || spec.method === "click") await loc.click();
+      for (const a of fs.actions) {
+        const loc = page.locator(a.selector);
+        if (a.method === "fill") await loc.fill(a.args?.[0] ?? "");
+        else if (a.method === "type") await loc.type(a.args?.[0] ?? "");
+        else if (a.method === "selectOption") await loc.selectOption(a.args?.[0] ?? "");
+        else if (!a.method || a.method === "click") await loc.click();
+      }
       return {
         data: {
-          success: spec.success ?? true,
-          message: spec.message ?? "",
-          actionDescription: spec.selector,
-          actions: [{ selector: spec.selector, description: "", method: spec.method ?? "click", arguments: spec.args ?? [] }],
+          success: fs.success ?? true,
+          message: fs.message ?? "",
+          actionDescription: fs.actions.map((a) => a.selector).join(","),
+          actions: fs.actions.map((a) => ({ selector: a.reportSelector ?? a.selector, description: "", method: a.method ?? "click", arguments: a.args ?? [] })),
         },
         metadata: {},
       };

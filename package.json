@@ -12,7 +12,8 @@
   "scripts": {
     "build": "tsc",
     "test": "node --import tsx --test \"test/*.test.ts\"",
-    "probe": "node scripts/probe-stagehand.mjs"
+    "probe": "node scripts/probe-stagehand.mjs",
+    "probe:act": "node --env-file=.env scripts/probe-overlay-act.mjs"
   },
   "keywords": [
     "browser-agent",
