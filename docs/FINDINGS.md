@@ -86,11 +86,32 @@ Non-obvious calls that emerged from building and from seven-agent review of each
   `act` — and it means the whole thesis is reproducible with no cloud key
   (`npm run probe:omlx`).
 
+## 4a. First measured pilot (N=3, one local rung — not the benchmark)
+
+A single-rung, N=3 run of the Day-6 harness (Qwen3.8-27B via oMLX, 10 tasks, 30
+decisive writes) — enough to validate the instrument end to end on a real model,
+far short of the ≥200-write, multi-rung floor the real number needs. It is recorded
+because the *shape* is the point, not the values:
+
+| Metric | Value | Reading |
+|---|---|---|
+| exec false-success | 60 % [42–75] (18/30) | Stagehand's mechanical executor reports success on writes that never landed |
+| residual MISS (exec) | 16.7 % [6–39] (3/18) | **all three misses are `optimistic-ui`** — the named ceiling, nothing else |
+| belief false-success | 20 % [7–45] (3/15) | the model itself believed done on the three optimistic-ui runs |
+| cry-wolf | 0 % (0/12) | zero false accusations on the 12 real landings |
+| under-confidence | 0 % (0/12) | — |
+| gate | `insufficient-n → publish:false` | the gate refuses to publish on one rung, as designed |
+
+The instrument caught overlay, expired-session, captcha, validation-reject and
+silent-noop, and missed only the fixture built to be its ceiling — the cleanest
+possible confirmation that the harness measures what it claims. The rate itself is
+still Day 6's job.
+
 ## 5. Not yet established
 
-- **The rate.** Both probe results are single trials. The write-side false-success rate
-  with a confidence interval is Day 6: ≥ 200 write steps on owned fixtures, one task set
-  across a model ladder, `auto` steps only in the headline.
+- **The rate.** The pilot above is one local rung at N=3. The write-side false-success rate
+  with a confidence interval is Day 6 proper: ≥ 200 write steps on owned fixtures, one task set
+  across a model ladder, `auto` steps only in the headline, gates read on their count floors.
 - **Frontier false-success on hard traps.** Run 1 shows a frontier agent recovering from
   an *easy* overlay. Whether it lies on harder silent failures (a POST that fails with no
   UI change, an optimistic-UI rollback) is the number that decides whether the product's
