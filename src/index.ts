@@ -51,6 +51,7 @@ export {
   type ReassertItem,
 } from "./assert.js";
 export { verifyChain, hashStep, canonical, type ChainResult } from "./chain.js";
+export { renderHtml, viewFile } from "./view.js";
 export type StepKind = "write" | "read" | "nav";
 
 export interface Step {
