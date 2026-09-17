@@ -10,16 +10,17 @@ The gap between "agent said done" and "page says done" is the product.
 
 ## Benchmark
 
-First measured pilot — one local model driving Stagehand across the fixture suite, oracle = server-recorded POST, no LLM in the scorer. **Not yet certified:** _n_ is below the pre-registered publish gate, which still reads `PUBLISH: false — insufficient-n`. The headline write-side false-success number is Day 6 proper (_n_ ≥ 200); this pilot is the direction, not the claim.
+One local model (Qwen3-27B via oMLX) driving Stagehand across 13 fixtures × 10 runs = **130 writes**, oracle = server-recorded POST, no LLM in the scorer, $0.
 
-| Pilot — local model via Stagehand, _n_ = 30 | Rate |
+| local model, _n_ = 130 | Rate (95% CI) |
 |---|---|
-| Agent reported success, write never landed | 60% (18/30) |
-| — TrueReplay caught it (`did-not-land`) | 83% (15/18) |
-| — residual miss | 17% (3/18) |
-| Cry-wolf — `did-not-land` on a write that **did** land (false halt) | 0% (0/12) |
+| Agent reported success, write never landed (exec) | 46% (60/130) |
+| — TrueReplay caught it (`did-not-land`) | 83% (50/60) |
+| — residual miss | 17% [9–28] (10/60) |
+| **Cry-wolf — `did-not-land` on a write that _did_ land (false halt)** | **0% [0–5.2] (0/70)** — certified |
+| Under-confidence — landed but parked `inconclusive` (review, not halt) | 14% (10/70) |
 
-Three hard false-halt shapes — masked input, stray validation, non-covering modal — are closed and regression-tested ([test/bench-fixtures.test.ts](test/bench-fixtures.test.ts)). Full pilot: [bench/out/report.md](bench/out/report.md); method in [docs/DAY6.md](docs/DAY6.md); what it means for the product in [docs/BUSINESS.md](docs/BUSINESS.md).
+Pre-registered gates: **market exists = true** (the weak model shows a real 14% belief-level false-success rate); **instrument works = null — insufficient-n** (only 10 belief-level silent failures; ≥20 needed); **PUBLISH = false**. What _is_ certified is the false-halt rate — cry-wolf 0 over ≥60 real landings, so the three hard shapes (masked input, stray validation, non-covering modal) held at scale ([test/bench-fixtures.test.ts](test/bench-fixtures.test.ts)). The headline write-side number and full instrument certification need the cloud weak→strong ladder. Ceiling, as predicted: optimistic-UI pages that lie to their user also fool the page reader — belief-level miss is 100% (10/10). Full report: [bench/out/report.md](bench/out/report.md); method in [docs/DAY6.md](docs/DAY6.md); product read in [docs/BUSINESS.md](docs/BUSINESS.md).
 
 ## Install
 
