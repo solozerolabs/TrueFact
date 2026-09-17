@@ -23,6 +23,7 @@ import {
   type Verdict,
 } from "./postcondition.js";
 import { attachSidecar, type Sidecar } from "./sidecar.js";
+import { hashStep } from "./chain.js";
 import {
   applyDeclarations,
   checkDeclarations,
@@ -49,6 +50,7 @@ export {
   type ReassertReport,
   type ReassertItem,
 } from "./assert.js";
+export { verifyChain, hashStep, canonical, type ChainResult } from "./chain.js";
 export type StepKind = "write" | "read" | "nav";
 
 export interface Step {
@@ -73,6 +75,12 @@ export interface Step {
   // which Stagehand does not echo back). Day 6 sums these into $/run.
   cost: { model: string | null; inputTokens: number; outputTokens: number; totalTokens: number; inferenceTimeMs: number } | null;
   timestamp: string;
+  // M1 tamper-evident chain, set at record time. `prevHash` links to the prior
+  // step ("" for the first); `hash` covers the whole step (incl. the sealed
+  // agent_claim) minus hash/sig. `sig` is added by M9 when a signing key is set.
+  prevHash?: string;
+  hash?: string;
+  sig?: string;
 }
 
 export interface RunDeclaration {
@@ -216,10 +224,16 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
   const defaultWait = opts.waitMs ?? 5000;
   if (opts.jsonl) mkdirSync(dirname(opts.jsonl), { recursive: true });
 
-  // Redact, push in memory, and (if configured) append one JSONL line — so the
-  // stored record survives a crashed run and always matches what's in memory.
+  // Redact, chain, push in memory, and (if configured) append one JSONL line —
+  // so the stored record survives a crashed run and always matches what's in
+  // memory. The hash is computed AFTER redaction, so a stored line re-hashes to
+  // its own `hash` (verify reads exactly what was written).
+  let prevHash = "";
   const record = (step: Step): void => {
     const clean = redactStep(step);
+    clean.prevHash = prevHash;
+    clean.hash = hashStep(clean);
+    prevHash = clean.hash;
     replay.steps.push(clean);
     if (opts.jsonl) appendFileSync(opts.jsonl, JSON.stringify(clean) + "\n");
   };
