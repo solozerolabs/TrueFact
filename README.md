@@ -10,17 +10,30 @@ The gap between "agent said done" and "page says done" is the product.
 
 ## Benchmark
 
-One local model (Qwen3-27B via oMLX) driving Stagehand across 13 fixtures × 10 runs = **130 writes**, oracle = server-recorded POST, no LLM in the scorer, $0.
+Four models — weak → strong — each driving Stagehand across 13 fixtures × 10 runs = **520 writes**, oracle = server-recorded POST, no LLM in the scorer, $4.91 total.
 
-| local model, _n_ = 130 | Rate (95% CI) |
-|---|---|
-| Agent reported success, write never landed (exec) | 46% (60/130) |
-| — TrueReplay caught it (`did-not-land`) | 83% (50/60) |
-| — residual miss | 17% [9–28] (10/60) |
-| **Cry-wolf — `did-not-land` on a write that _did_ land (false halt)** | **0% [0–5.2] (0/70)** — certified |
-| Under-confidence — landed but parked `inconclusive` (review, not halt) | 14% (10/70) |
+**TrueReplay's verdict is model-independent** (it reads the page, not the agent), so its behavior per trap is the same whoever is driving:
 
-Pre-registered gates: **market exists = true** (the weak model shows a real 14% belief-level false-success rate); **instrument works = null — insufficient-n** (only 10 belief-level silent failures; ≥20 needed); **PUBLISH = false**. What _is_ certified is the false-halt rate — cry-wolf 0 over ≥60 real landings, so the three hard shapes (masked input, stray validation, non-covering modal) held at scale ([test/bench-fixtures.test.ts](test/bench-fixtures.test.ts)). The headline write-side number and full instrument certification need the cloud weak→strong ladder. Ceiling, as predicted: optimistic-UI pages that lie to their user also fool the page reader — belief-level miss is 100% (10/10). Full report: [bench/out/report.md](bench/out/report.md); method in [docs/DAY6.md](docs/DAY6.md); product read in [docs/BUSINESS.md](docs/BUSINESS.md).
+| Trap (write never lands) | TrueReplay verdict, all 4 drivers | |
+|---|---|---|
+| click-intercepting cookie overlay | `did-not-land` (40/40) | caught |
+| captcha / bot-gate | `did-not-land` (40/40) | caught |
+| validation-reject | `did-not-land` (40/40) | caught |
+| expired session, dead-click no-op | `inconclusive` (40/40) | parked — never claims success |
+| **optimistic UI (page shows ✅, server 500s)** | **`landed` (40/40)** | **missed — the page-lie ceiling** |
+
+**The model curve** is how often the *agent itself* is fooled (believes success from the page when the write didn't land), and TrueReplay's catch of those:
+
+| Driver | Agent believed success, but didn't land | TrueReplay caught | Cry-wolf (false halt) |
+|---|---|---|---|
+| Claude Haiku 4.5 | 26% (21/80) | **11/21** | 0% (0/69) |
+| Qwen3-27B (local) | 14% (10/70) | 0/10 | 0% (0/70) |
+| Claude Sonnet 4.5 | 14% (10/70) | 1/10 | 0% (0/70) |
+| Claude Opus 4.8 | 15% (10/68) | 0/10 | 0% (0/70) |
+
+Read the two tables together: **as the driver strengthens, its residual false-beliefs concentrate into the one case no page-reader can beat.** Haiku is fooled 21 ways and TrueReplay catches the 11 that aren't page-lies; Opus is fooled only 10 times — and all 10 are optimistic-UI, where even Opus believed the order was placed 10/10 times while the server said it failed. Every one of the 40 misses is optimistic-UI; on every other trap TrueReplay is perfect across all four models.
+
+Pre-registered gates: **market exists = true** (Haiku's belief false-success is 26%); **instrument works = false** — but all 39 pooled misses are optimistic-UI, the lying page a page-read can't beat; **cry-wolf 0/279 across every rung** (the false-halt engine holds under a frontier driver); **PUBLISH = false**. The takeaway the ladder proves: the auto page-verdict is near-perfect except against a page that lies — money-critical writes need a declared postcondition or a server signal (the oracle), which is what `expect` provides. Full report: [bench/out/report.md](bench/out/report.md); method in [docs/DAY6.md](docs/DAY6.md); product read in [docs/BUSINESS.md](docs/BUSINESS.md).
 
 ## Install
 
