@@ -3,4 +3,7 @@ dist/
 .truereplay/
 *.log
 .env
-bench/out/
+bench/out/*
+!bench/out/report.md
+!bench/out/report.json
+!bench/out/oracle.jsonl
