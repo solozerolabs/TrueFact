@@ -71,4 +71,29 @@ describe("bench fixtures: the oracle is honest", () => {
       assert.equal((await runTask(task, click)).truth.landed, false);
     });
   }
+
+  // Hard clean set: writes that LAND but whose shape once provoked a false halt.
+  // The three false-halts are fixed; these pin the corrected verdicts so a
+  // regression flips the test. cry-wolf on this set must stay 0.
+
+  it("masked-phone: a masked fill reads back reformatted, but lands — field-match after alnum normalization", async () => {
+    const { step, truth } = await runTask("masked-phone", [{ selector: "#phone", method: "fill", args: ["5551234567"] }]);
+    assert.equal(truth.landed, true);
+    assert.equal(step.verdict, "landed"); // "(555) 123-4567" normalizes to the typed digits
+    assert.equal(step.evidence.postcondition?.reason, "field-match");
+  });
+
+  it("blur-validate: a stray invalid coupon beside a real confirmation does not outrank it — landed", async () => {
+    const { step, truth } = await runTask("blur-validate", click);
+    assert.equal(truth.landed, true);
+    assert.equal(step.verdict, "landed");
+    assert.equal(step.evidence.postcondition?.reason, "confirmation");
+  });
+
+  it("modal-cookie: a corner aria-modal cookie card intercepts nothing, so it is no obstruction — not a halt", async () => {
+    const { step, truth } = await runTask("modal-cookie", click);
+    assert.equal(truth.landed, true);
+    assert.equal(step.evidence.session.obstruction, null); // geometry check clears the non-covering modal
+    assert.notEqual(step.verdict, "did-not-land"); // no longer a false halt (inconclusive: real write, no feedback)
+  });
 });

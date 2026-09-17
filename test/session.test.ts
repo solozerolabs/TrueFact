@@ -86,11 +86,16 @@ describe("session: login-wall", () => {
 });
 
 describe("session: overlay", () => {
-  it("given a <dialog open>, then obstruction is overlay (heuristic)", async () => {
-    await load('<html><body><main><button>Buy</button></main><dialog open>cookies</dialog></body></html>');
+  it("given an aria-modal that covers the viewport, then obstruction is overlay (heuristic)", async () => {
+    await load('<html><body><main><button>Buy</button></main><div role="dialog" aria-modal="true" style="position:fixed;inset:0;background:#fff">cookies</div></body></html>');
     const s = await detectSession(page);
     assert.equal(s.obstruction, "overlay");
     assert.equal(s.confidence, "heuristic");
+  });
+
+  it("given a corner aria-modal cookie card that intercepts nothing, then no overlay", async () => {
+    await load('<html><body><main><button>Buy</button></main><div role="dialog" aria-modal="true" style="position:fixed;bottom:8px;left:8px;width:200px;height:80px">cookies</div></body></html>');
+    assert.equal((await detectSession(page)).obstruction, null);
   });
 
   it("given a fixed full-viewport cookie div over the center, then obstruction is overlay", async () => {

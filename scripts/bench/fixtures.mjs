@@ -18,6 +18,14 @@ export const TASKS = [
   { id: "slow-confirm", lands: true, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed?" },
   { id: "clean-settings", lands: true, instruction: "click the 'Save changes' button", completionQuestion: "Were the changes saved?" },
   { id: "clean-form", lands: true, instruction: "click the 'Sign up' button", completionQuestion: "Was the sign-up completed?" },
+  // Hard clean set — genuine successes (lands:true) whose SHAPE tempts a false
+  // halt. These bound cry-wolf (falseAccusation) where the easy clean fixtures
+  // can't; each exercises a different did-not-land path on a write that landed.
+  // See docs/BUSINESS.md §4. TrueReplay's current verdict on each is pinned in
+  // test/bench-fixtures.test.ts, so an improvement flips a test.
+  { id: "masked-phone", lands: true, instruction: "enter 5551234567 in the phone number field", completionQuestion: "Was the phone number saved?" },
+  { id: "blur-validate", lands: true, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed?" },
+  { id: "modal-cookie", lands: true, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed?" },
 ];
 
 const shell = (title, body, script = "") =>
@@ -91,6 +99,33 @@ const PAGES = {
     shell("Sign up", `<form id="f"><input id="email" name="email" placeholder="email" value="a@b.co"><button id="signup" type="button">Sign up</button></form><p id="ok"></p>`,
       `<script>document.getElementById('signup').onclick=async()=>{try{await fetch('/submit?task=clean-form',{method:'POST',keepalive:true});}catch(e){}location.href='/clean-form/done';};</script>`),
   "clean-form/done": () => shell("Welcome", `<h1>Welcome</h1><p id="ok">✅ Sign-up complete</p>`),
+
+  // Hard clean set (all land server-side). Each is a real write the current
+  // classifier mis-reads as did-not-land — the false-halt shapes.
+
+  // Input masking: fill "5551234567", the field reads back "(555) 123-4567".
+  // The POST fires on input (keepalive), so the oracle lands; fieldPostcondition's
+  // `actual.includes(expected)` fails on the reformatted value → field-mismatch.
+  "masked-phone": () =>
+    shell("Contact details", `<h1>Contact details</h1><label>Phone <input id="phone" name="phone" placeholder="phone" autocomplete="tel"></label>`,
+      `<script>const el=document.getElementById('phone');let saved=false;el.addEventListener('input',()=>{const d=el.value.replace(/\\D/g,'').slice(0,10);el.value=d.length===10?'('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6):d;if(d.length===10&&!saved){saved=true;fetch('/submit?task=masked-phone',{method:'POST',keepalive:true}).catch(()=>{});}});</script>`),
+
+  // Stray invalid field beside a real confirmation: the order posts and shows
+  // "✅ Order placed", but an unrelated optional coupon is pattern-invalid, so
+  // reportValidity marks it :user-invalid. A global :user-invalid rise must not
+  // outrank the confirmation → the write landed.
+  "blur-validate": () =>
+    shell("Checkout", `<h1>Checkout</h1><p><b>Deluxe Widget</b> — $49.00</p><form id="f"><input name="coupon" pattern="[0-9]{6}" value="SAVE10" placeholder="coupon (optional)"><button id="place" type="button">Place order</button></form><p id="ok"></p>`,
+      `<script>document.getElementById('place').addEventListener('click',async()=>{try{await fetch('/submit?task=blur-validate',{method:'POST',keepalive:true});}catch(e){}document.getElementById('f').reportValidity();document.getElementById('ok').textContent='✅ Order placed — confirmation #4242';});</script>`),
+
+  // Non-intercepting aria-modal: a corner cookie card marked aria-modal="true"
+  // that does NOT cover the button. The click POSTs (lands) with no visible
+  // feedback → no-change; the modal-by-attribute check flags an overlay →
+  // no-change + overlay → did-not-land false halt.
+  "modal-cookie": () =>
+    shell("Checkout", `<h1>Checkout</h1><p><b>Deluxe Widget</b> — $49.00</p><button id="place" type="button">Place order</button><p id="ok"></p>
+      <div role="dialog" aria-modal="true" style="position:fixed;bottom:12px;left:12px;width:260px;padding:12px;background:#fff;border:1px solid #ccc;border-radius:8px;font-size:14px">🍪 We use cookies. <button id="cc" type="button">OK</button></div>`,
+      `<script>document.getElementById('place').addEventListener('click',()=>{fetch('/submit?task=modal-cookie',{method:'POST',keepalive:true}).catch(()=>{});});document.getElementById('cc').addEventListener('click',()=>document.querySelector('[role=dialog]').remove());</script>`),
 };
 
 /** Start the fixtures on a random port. Returns the base URL, the oracle read,

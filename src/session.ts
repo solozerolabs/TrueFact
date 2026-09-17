@@ -193,12 +193,20 @@ export async function detectSession(
   const overlay = await safeRead(
     page,
     (pt) => {
-      const modal = document.querySelector('dialog[open], [aria-modal="true"]');
-      if (modal) return "modal:" + modal.tagName.toLowerCase();
       const p = pt as { x: number; y: number } | undefined;
       const x = p ? p.x : Math.floor(window.innerWidth / 2);
       const y = p ? p.y : Math.floor(window.innerHeight / 2);
       const area = window.innerWidth * window.innerHeight;
+      // A declared modal counts only if it actually obstructs — it covers most
+      // of the viewport, or it sits over the attempt point. A corner cookie card
+      // marked aria-modal that intercepts nothing is not an obstruction.
+      const modal = document.querySelector('dialog[open], [aria-modal="true"]');
+      if (modal) {
+        const r = modal.getBoundingClientRect();
+        const covers = r.width * r.height >= 0.8 * area;
+        const overPoint = modal.contains(document.elementFromPoint(x, y));
+        if (covers || overPoint) return "modal:" + modal.tagName.toLowerCase();
+      }
       let el: Element | null = document.elementFromPoint(x, y);
       while (el && el !== document.body) {
         const cs = getComputedStyle(el);

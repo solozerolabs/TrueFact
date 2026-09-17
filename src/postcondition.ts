@@ -239,14 +239,23 @@ export function classify(before: PageState, after: PageState, pageSwitched: bool
   if (pageSwitched) return out("landed", "new-page", "high");
   if (urlChanged && !hashOnly) return out("landed", "navigated", "high");
 
+  // A corroborated error (an alert announcing an error) is a real rejection and
+  // outranks everything below.
+  if (hasRole("alert") && hasErrorText) return out("did-not-land", "validation-error", "high");
+
+  // A positive confirmation signal outranks a stray :user-invalid elsewhere on
+  // the page: a write that shows "Order placed ✅" landed even if an unrelated
+  // optional field also went invalid. Real rejections show no confirmation, so
+  // validation-reject (empty required field, no ✅) still falls through to
+  // did-not-land below.
+  const hasConfirm = hasRole("status") || hasRole("dialog") || hasConfirmText;
   const activeInvalid = after.activeField ? after.forms[after.activeField]?.userInvalid : false;
-  if (after.userInvalidCount > before.userInvalidCount || activeInvalid) {
+  if (!hasConfirm && (after.userInvalidCount > before.userInvalidCount || activeInvalid)) {
     return out("did-not-land", "validation-error", "high");
   }
-  if (hasRole("alert") && hasErrorText) return out("did-not-land", "validation-error", "high");
   if (hasErrorText && !hasRole("alert") && !hasRole("status")) return out("inconclusive", "error-text", "heuristic");
   if (hasRole("dialog") && hasRole("button")) return out("inconclusive", "prompt", "high");
-  if (hasRole("status") || hasRole("alert") || hasRole("dialog") || hasConfirmText) {
+  if (hasConfirm || hasRole("alert")) {
     return out("landed", "confirmation", "heuristic");
   }
   const nonEmptyBefore = Object.keys(before.forms).filter((k) => !isEmptyValue(before.forms[k]));
@@ -366,11 +375,16 @@ export async function fieldPostcondition(page: Page, action: Action): Promise<Fi
   const res = await readTarget(page, action.selector);
   if (!res || !res.found) return null;
   const actual = res.value;
+  // Compare on alphanumerics only, so input masking (a phone that renders
+  // "(555) 123-4567", a trimmed/reformatted value) is not read as a mismatch.
+  // ponytail: alnum-normalized substring; if a field's punctuation is ever
+  // semantic (rare), compare raw for that type.
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
   const match = SELECT_METHODS.has(action.method)
     ? actual === expected
     : expected === ""
       ? actual === ""
-      : actual.includes(expected);
+      : norm(actual).includes(norm(expected));
   return {
     verdict: match ? "landed" : "did-not-land",
     reason: match ? "field-match" : "field-mismatch",
