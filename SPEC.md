@@ -60,6 +60,10 @@ Browser-use adapter · Playwright-MCP adapter · dashboard · screenshot judge �
 
 > TrueReplay says whether it landed. It never says whether it should have.
 
+## Post-MVP roadmap (only if Day 6 clears)
+
+- **Verdict-indexed replay.** A session replay — the actual video / DOM timeline of the run — with every moment stamped by TrueReplay's verdict, so a user seeks straight to the step where the agent said "done" and the page disagreed. Raw session replay is table stakes (Playwright's trace viewer, Browserbase replay, browser-use all show one); the differentiator is the *index*, a query only TrueReplay can answer because only it computes the verdict independently. Capture is delegated to the layer below (Playwright `recordVideo` / `tracing`, or Browserbase session replay), never built here; TrueReplay owns only the sidecar index that joins each step's verdict to a position in the capture, plus a thin static viewer that filters by verdict and seeks. The per-step screenshot stays as the verdict-anchored citation and the fallback when capture is off. The replay is a viewing layer over verdicts already computed — it never feeds a verdict, so the two channels stay separate. One privacy constraint carries: video and DOM snapshots defeat the a11y/text redaction (a typed password is visible in the pixels), so capture is off by default and opt-in per run. Full spec: [docs/REPLAY.md](docs/REPLAY.md).
+
 ## Findings
 
 Verified Stagehand-4.1 behavior, measured numbers, the false-success demonstration on real agents, and the design conclusions that survived review are consolidated in [docs/FINDINGS.md](docs/FINDINGS.md). Probe runs: [docs/PROBES.md](docs/PROBES.md).
