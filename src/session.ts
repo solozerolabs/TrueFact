@@ -57,7 +57,7 @@ export async function fingerprint(page: Page): Promise<Fingerprint | null> {
   })) as Promise<Fingerprint | null>;
 }
 
-function sameFingerprint(a: Fingerprint, b: Fingerprint): boolean {
+export function sameFingerprint(a: Fingerprint, b: Fingerprint): boolean {
   return (
     a.href === b.href &&
     a.readyState === b.readyState &&

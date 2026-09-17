@@ -3,7 +3,7 @@
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Stagehand, localBrowser } from "@browserbasehq/stagehand";
-import { writeVerdict, rollup, withReplay, type Step } from "../src/index.js";
+import { sessionVerdict, rollup, withReplay, type Step } from "../src/index.js";
 import type { SessionEvidence } from "../src/session.js";
 
 const session = (over: Partial<SessionEvidence> = {}): SessionEvidence => ({
@@ -26,15 +26,17 @@ const step = (over: Partial<Step>): Step => ({
   ...over,
 });
 
-describe("writeVerdict", () => {
-  it("high-confidence obstruction -> did-not-land", () => {
-    assert.equal(writeVerdict(session({ obstruction: "captcha", confidence: "high" })), "did-not-land");
+describe("sessionVerdict (Day 2 obstruction rule / Day 3 destination gate)", () => {
+  it("high-confidence obstruction -> did-not-land regardless of the verdict so far", () => {
+    assert.equal(sessionVerdict("landed", session({ obstruction: "captcha", confidence: "high" })), "did-not-land");
+    assert.equal(sessionVerdict("inconclusive", session({ obstruction: "blank", confidence: "high" })), "did-not-land");
   });
-  it("heuristic obstruction -> inconclusive (never fabricates a failure)", () => {
-    assert.equal(writeVerdict(session({ obstruction: "overlay", confidence: "heuristic" })), "inconclusive");
+  it("heuristic obstruction only demotes a landed to inconclusive", () => {
+    assert.equal(sessionVerdict("landed", session({ obstruction: "overlay", confidence: "heuristic" })), "inconclusive");
+    assert.equal(sessionVerdict("did-not-land", session({ obstruction: "login-wall", confidence: "heuristic" })), "did-not-land");
   });
-  it("clear -> inconclusive (Day 3 postcondition decides)", () => {
-    assert.equal(writeVerdict(session()), "inconclusive");
+  it("no obstruction -> verdict unchanged", () => {
+    assert.equal(sessionVerdict("landed", session()), "landed");
   });
 });
 

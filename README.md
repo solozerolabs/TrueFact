@@ -41,6 +41,8 @@ console.log(replay.steps);   // per-step: kind, action, verdict, evidence, attem
 console.log(replay.verdict); // per-run over write steps: landed | did-not-land | inconclusive
 ```
 
+Each write step's `evidence.postcondition.reason` says *why* — `confirmation`, `navigated`, `form-cleared`, `field-match` → `landed`; `validation-error`, `no-change` → `did-not-land`; `prompt`, `changed-unclassified`, `hash-only-nav` → `inconclusive`. Session obstructions (login wall, CAPTCHA, cookie overlay) and passwords redacted are folded in automatically. See [docs/DAY3.md](docs/DAY3.md).
+
 ## The rule
 
 TrueReplay never trusts the agent. It reads the page. The agent's claim is recorded on a separate channel and compared only at the end. If those two channels touch during measurement, the false-success number is worthless — so they don't.
