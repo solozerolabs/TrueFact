@@ -66,6 +66,8 @@ describe("withReplay: declared postconditions end to end", () => {
     fx = await serve({
       "/silent": `<html><body><main><button id="s">Save</button><p id="msg"></p><script>document.getElementById('s').onclick=()=>{fetch('/x').catch(()=>{});}</script></main></body></html>`,
       "/receipt": `<html><body><main><button id="s">Pay</button><script>document.getElementById('s').onclick=()=>document.body.insertAdjacentHTML('beforeend','<div id="receipt" role="status">Order #4821 placed</div>')</script></main></body></html>`,
+      // R10: the status text is split across inline markup, so its number lands on a separate a11y line
+      "/receipt-inline": `<html><body><main><button id="s">Pay</button><script>document.getElementById('s').onclick=()=>document.body.insertAdjacentHTML('beforeend','<div role="status">Order #<strong>4821</strong> placed</div>')</script></main></body></html>`,
       // renders the receipt with no role and no confirmation-shaped words: auto can only say changed-unclassified
       "/receipt-silent": `<html><body><main><button id="s">Pay</button><script>document.getElementById('s').onclick=()=>document.body.insertAdjacentHTML('beforeend','<div id="receipt">ref 4821</div>')</script></main></body></html>`,
       "/late": `<html><body><main><button id="s">Pay</button><script>document.getElementById('s').onclick=()=>setTimeout(()=>document.body.insertAdjacentHTML('beforeend','<div id="receipt">Order #77</div>'),700)</script></main></body></html>`,
@@ -107,6 +109,13 @@ describe("withReplay: declared postconditions end to end", () => {
 
   it("given a declared text with role status, then landed / declared-met via the a11y tree", async () => {
     await go("/receipt");
+    const { step } = await runAct({ selector: "#s" }, { kind: "text", matches: /Order #\d+/, role: "status" });
+    assert.equal(step.verdict, "landed");
+    assert.match(step.evidence.postcondition?.declared?.[0].actual ?? "", /Order #4821/);
+  });
+
+  it("given a declared text role status whose value is split across inline markup (R10), then landed / declared-met", async () => {
+    await go("/receipt-inline");
     const { step } = await runAct({ selector: "#s" }, { kind: "text", matches: /Order #\d+/, role: "status" });
     assert.equal(step.verdict, "landed");
     assert.match(step.evidence.postcondition?.declared?.[0].actual ?? "", /Order #4821/);

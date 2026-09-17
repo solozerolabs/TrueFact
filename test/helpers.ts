@@ -109,6 +109,7 @@ export interface FakeSpec {
   success?: boolean;
   message?: string;
   usage?: Record<string, number>; // Stagehand result metadata.usage, for cost tests
+  extract?: unknown; // if present, fake extract returns { data: extract } (grounding tests)
 }
 
 /**
@@ -138,7 +139,8 @@ export function fakeStagehand(stagehand: Stagehand, page: Page, spec: ActionSpec
         metadata: fs.usage ? { usage: fs.usage } : {},
       };
     },
-    extract: ((...a: unknown[]) => (stagehand.extract as (...x: unknown[]) => unknown)(...a)) as Stagehand["extract"],
-    observe: ((...a: unknown[]) => (stagehand.observe as (...x: unknown[]) => unknown)(...a)) as Stagehand["observe"],
+    // Only the LLM is faked: extract returns the configured data, the browser is real.
+    extract: (async () => ({ data: fs.extract, metadata: fs.usage ? { usage: fs.usage } : {} })) as unknown as Stagehand["extract"],
+    observe: (async () => []) as unknown as Stagehand["observe"],
   } as unknown as Stagehand;
 }

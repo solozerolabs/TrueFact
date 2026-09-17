@@ -83,6 +83,26 @@ export function normalizeTree(formattedTree: string): string[] {
     .filter(Boolean);
 }
 
+/** One snapshot → normalized tree lines, or null if the snapshot threw
+ *  (mid-navigation). The single place `captureState`, `checkDeclarations` and
+ *  grounding read the a11y tree. */
+export async function readTree(page: Page): Promise<string[] | null> {
+  try {
+    return normalizeTree((await page.snapshot()).formattedTree);
+  } catch {
+    return null;
+  }
+}
+
+/** The page text of one normalized tree line, without its `role:` prefix or
+ *  `[selected]`/`[checked]` markers. A role-only structural line (no `: `,
+ *  e.g. `status`, `scrollable, html`) has no text and returns "". */
+export function treeText(line: string): string {
+  const clean = line.replace(/\s*\[[a-z]+\]/g, "").trim();
+  const i = clean.indexOf(": ");
+  return i === -1 ? "" : clean.slice(i + 2).trim();
+}
+
 export function multisetDiff(a: string[], b: string[]): string[] {
   const counts = new Map<string, number>();
   for (const x of b) counts.set(x, (counts.get(x) ?? 0) + 1);
@@ -97,12 +117,7 @@ export function multisetDiff(a: string[], b: string[]): string[] {
 
 export async function captureState(page: Page): Promise<PageState> {
   const fp = (await fingerprint(page)) ?? EMPTY_FP;
-  let tree: string[] = [];
-  try {
-    tree = normalizeTree((await page.snapshot()).formattedTree);
-  } catch {
-    /* mid-navigation snapshot can throw; empty tree is a safe read */
-  }
+  const tree = (await readTree(page)) ?? []; // mid-navigation snapshot can throw; empty tree is a safe read
   const meta =
     (await safeRead(page, () => {
       const forms: Record<string, { value: string; checked?: boolean; userInvalid: boolean }> = {};

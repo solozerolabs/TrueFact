@@ -4,10 +4,11 @@
 import type { Page } from "@browserbasehq/stagehand";
 import { safeRead } from "./session.js";
 import {
-  normalizeTree,
   pollUntil,
   readTarget,
+  readTree,
   redactLen,
+  treeText,
   type Outcome,
   type PostReason,
 } from "./postcondition.js";
@@ -82,14 +83,18 @@ async function checkOne(
         if (!lines) return { met: null, actual: null, isPassword: false };
         const roleRx = new RegExp("^" + d.role + "\\b");
         let hit: string | null = null;
-        for (let i = 0; i < lines.length && !hit; i++) {
+        // R10: a role's text lives in child StaticText lines, and inline markup
+        // (Order #<strong>4821</strong>) splits it across several — so match over
+        // the joined subtree, not line by line. Try a spaced join and a tight
+        // join (the DOM had no separator between inline nodes).
+        for (let i = 0; i < lines.length && hit === null; i++) {
           if (!roleRx.test(lines[i])) continue;
-          for (let j = i; j < Math.min(lines.length, i + 6); j++) {
-            if (matches(d.matches, lines[j])) {
-              hit = lines[j];
-              break;
-            }
-          }
+          const parts: string[] = [];
+          for (let j = i; j < Math.min(lines.length, i + 6); j++) parts.push(treeText(lines[j]));
+          const spaced = parts.filter(Boolean).join(" ");
+          const tight = parts.join("");
+          if (matches(d.matches, spaced)) hit = spaced;
+          else if (matches(d.matches, tight)) hit = tight;
         }
         return { met: d.absent ? hit === null : hit !== null, actual: hit, isPassword: false };
       }
@@ -119,11 +124,7 @@ export async function checkDeclarations(page: Page, decls: Declaration[], budget
     let cached: string[] | null | undefined;
     const tree = async () => {
       if (cached !== undefined) return cached;
-      try {
-        cached = normalizeTree((await page.snapshot()).formattedTree);
-      } catch {
-        cached = null;
-      }
+      cached = await readTree(page);
       return cached;
     };
     const out: DeclaredResult[] = [];

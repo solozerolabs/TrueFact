@@ -9,11 +9,13 @@ import type {
   Page,
   Stagehand,
   StagehandClientActOptions,
+  StagehandClientExtractOptions,
 } from "@browserbasehq/stagehand";
 import { detectSession, fingerprint, settle, type Fingerprint, type SessionEvidence } from "./session.js";
 import {
   captureState,
   decideWrite,
+  readTree,
   redactLen,
   sessionVerdict,
   type Postcondition,
@@ -26,10 +28,11 @@ import {
   type Declaration,
   type DeclaredResult,
 } from "./declaration.js";
+import { groundValues, type Grounding, type GroundingReason } from "./grounding.js";
 import { redactText } from "./redact.js";
 
-export type { Verdict, Postcondition, SessionEvidence, Fingerprint, Declaration, DeclaredResult };
-export { sessionVerdict, applyDeclarations, validateDeclarations };
+export type { Verdict, Postcondition, SessionEvidence, Fingerprint, Declaration, DeclaredResult, Grounding, GroundingReason };
+export { sessionVerdict, applyDeclarations, validateDeclarations, groundValues };
 export type StepKind = "write" | "read" | "nav";
 
 export interface Step {
@@ -43,6 +46,7 @@ export interface Step {
     settled: boolean;
     session: SessionEvidence;
     postcondition?: Postcondition;
+    grounding?: Grounding; // extract steps: did each returned value appear on the page
     nav?: { status: number | null };
     screenshot?: string;
   };
@@ -144,6 +148,34 @@ const costOf = (claim: unknown, model: string | null): Step["cost"] => {
 const modelName = (o: unknown): string | null =>
   (o as { model?: { modelName?: string } })?.model?.modelName ?? null;
 
+/** The extract options among the call args (not the zod schema, which has a
+ *  `parse`/`_def`). Works whether options sit at arg 1 (no schema) or arg 2. */
+function extractOptionsOf(args: unknown[]): StagehandClientExtractOptions | undefined {
+  for (let i = 1; i < args.length; i++) {
+    const a = args[i] as { parse?: unknown; _def?: unknown } | null;
+    if (a && typeof a === "object" && typeof a.parse !== "function" && !("_def" in a)) return a as StagehandClientExtractOptions;
+  }
+  return undefined;
+}
+
+const nonGrounding = (): Grounding => ({ verdict: "inconclusive", reason: "non-grounding", confidence: "heuristic", values: [], skipped: 0 });
+
+/** Ground an extract's returned data against the a11y tree of the page it read
+ *  (`options.page` may target a non-active tab). Redact any absent leaf that is
+ *  the length of a masked password run — the only case a returned value could
+ *  be a secret the tree did not already mask. */
+async function groundExtract(active: Page, extractOpts: StagehandClientExtractOptions | undefined, claim: unknown): Promise<Grounding> {
+  const target = ((extractOpts?.page as Page | undefined) ?? active);
+  const tree = await readTree(target);
+  if (!tree) return nonGrounding();
+  const g = groundValues((claim as { data?: unknown })?.data, tree);
+  if (extractOpts?.screenshot) g.visual = true;
+  const masks = new Set<number>();
+  for (const l of tree) { const m = l.match(/•+/g); if (m) for (const s of m) masks.add(s.length); }
+  if (masks.size) for (const v of g.values) if (v.match === "absent" && masks.has(v.value.length)) v.value = redactLen(v.value);
+  return g;
+}
+
 /** Redact secrets from a step's free-text fields, in place of trusting callers. */
 function redactStep(step: Step): Step {
   step.action = redactText(step.action);
@@ -152,6 +184,8 @@ function redactStep(step: Step): Step {
     step.attempt = step.attempt.map((a) =>
       a.arguments?.length ? { ...a, arguments: a.arguments.map(redactText) } : a,
     );
+  if (step.evidence.grounding)
+    step.evidence.grounding.values = step.evidence.grounding.values.map((v) => ({ ...v, value: redactText(v.value) }));
   return step;
 }
 
@@ -205,7 +239,7 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
     kind: StepKind,
     action: string,
     invoke: (page: Page) => Promise<unknown>,
-    declared: { expect?: Declaration | Declaration[]; waitMs?: number; model?: string | null } = {},
+    declared: { expect?: Declaration | Declaration[]; waitMs?: number; model?: string | null; ground?: boolean; extractOpts?: StagehandClientExtractOptions } = {},
   ): Promise<unknown> {
     const decls = validateDeclarations(declared.expect); // fail fast, before the write
     const waitMs = declared.waitMs ?? defaultWait;
@@ -232,9 +266,17 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
     if (!isWrite) {
       const navStatus = kind === "nav" ? statusOf(claim) : undefined;
       const session = await detectSession(page, { navStatus });
+      // Grounding is the read-side check: does each value an extract returned
+      // actually appear on the page? observe/goto and a thrown extract → non-grounding.
+      const grounding =
+        kind === "read"
+          ? declared.ground && !threw
+            ? await groundExtract(page, declared.extractOpts, claim)
+            : nonGrounding()
+          : undefined;
       record({
-        kind, action, declaration: "auto", verdict: "inconclusive",
-        evidence: { before: beforeFp, after: await fingerprint(page), settled, session, ...(kind === "nav" ? { nav: { status: navStatus ?? null } } : {}) },
+        kind, action, declaration: "auto", verdict: grounding ? grounding.verdict : "inconclusive",
+        evidence: { before: beforeFp, after: await fingerprint(page), settled, session, ...(grounding ? { grounding } : {}), ...(kind === "nav" ? { nav: { status: navStatus ?? null } } : {}) },
         attempt: null, agent_claim: null, cost, timestamp: new Date().toISOString(),
       });
       if (threw) throw threw;
@@ -289,8 +331,10 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
       const { expect, waitMs, ...rest } = options ?? {};
       return run("write", `act: ${actionText(instruction)}`, () => stagehand.act(instruction as string, rest), { expect, waitMs, model: modelName(rest) }) as Promise<ActResult>;
     },
-    extract: ((...args: unknown[]) =>
-      run("read", `extract: ${actionText(args[0])}`, () => (stagehand.extract as (...a: unknown[]) => Promise<unknown>)(...args), { model: modelName(args[1]) })) as Stagehand["extract"],
+    extract: ((...args: unknown[]) => {
+      const extractOpts = extractOptionsOf(args);
+      return run("read", `extract: ${actionText(args[0])}`, () => (stagehand.extract as (...a: unknown[]) => Promise<unknown>)(...args), { model: modelName(extractOpts), ground: true, extractOpts });
+    }) as Stagehand["extract"],
     observe: ((...args: unknown[]) =>
       run("read", `observe: ${actionText(args[0])}`, () => (stagehand.observe as (...a: unknown[]) => Promise<unknown>)(...args), { model: modelName(args[1]) })) as Stagehand["observe"],
     page: {
