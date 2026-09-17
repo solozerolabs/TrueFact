@@ -1,90 +1,103 @@
 # TrueReplay
 
-Replay what your browser agent actually did — and get an independent verdict on whether each write **landed / did-not-land / inconclusive**, computed by reading the live page, not by trusting anything the agent claims.
+**Your browser agent said it placed the order. The order wasn't placed. You found out from a customer.**
 
-The gap between "agent said done" and "page says done" is the product.
+TrueReplay wraps your browser agent and, after every action, reads the live page itself — and the network under it — to give an independent verdict: **landed / did-not-land / inconclusive**. It never trusts what the agent claims. The gap between "agent said done" and "the world says done" is the whole product.
 
-> **Proven on a real agent:** a local model driving Stagehand clicked "Place order" onto a cookie overlay, Stagehand reported `success: true`, the order was never placed, and TrueReplay independently said `did-not-land`. See [docs/FINDINGS.md](docs/FINDINGS.md) and [docs/PROBES.md](docs/PROBES.md).
+- **Silent failures caught.** A click that lands on a cookie overlay, a form that rejected, a page that shows ✅ while the server returned 500 — the agent reports success for all of them. TrueReplay doesn't.
+- **Not another LLM judge.** The verdict is a deterministic read of the page and the network, not a model grading a model. Sub-second, no extra tokens.
+- **A receipt, not a log.** Every step is recorded on a tamper-evident chain you can replay, assert against offline, and verify.
 
-> **Status: Days 1–6 of a 7-day MVP built.** Session-state detection ([docs/DAY2.md](docs/DAY2.md)), the auto-inferred postcondition ([docs/DAY3.md](docs/DAY3.md)), declared postconditions ([docs/DAY4.md](docs/DAY4.md)), extract grounding ([docs/DAY5.md](docs/DAY5.md)) and the benchmark harness ([docs/DAY6.md](docs/DAY6.md)) ship with 142 hermetic tests (~12 s, real Chrome, no LLM). Day 7 (final day) specced ([docs/DAY7.md](docs/DAY7.md)). Roadmap in [SPEC.md](SPEC.md).
-
-## Benchmark
-
-Four models — weak → strong — each driving Stagehand across 13 fixtures × 10 runs = **520 writes**, oracle = server-recorded POST, no LLM in the scorer, $4.91 total.
-
-**TrueReplay's verdict is model-independent** (it reads the page, not the agent), so its behavior per trap is the same whoever is driving:
-
-| Trap (write never lands) | TrueReplay verdict, all 4 drivers | |
-|---|---|---|
-| click-intercepting cookie overlay | `did-not-land` (40/40) | caught |
-| captcha / bot-gate | `did-not-land` (40/40) | caught |
-| validation-reject | `did-not-land` (40/40) | caught |
-| expired session, dead-click no-op | `inconclusive` (40/40) | parked — never claims success |
-| **optimistic UI (page shows ✅, server 500s)** | **`landed` (40/40)** | **missed — the page-lie ceiling** |
-
-**The model curve** is how often the *agent itself* is fooled (believes success from the page when the write didn't land), and TrueReplay's catch of those:
-
-| Driver | Agent believed success, but didn't land | TrueReplay caught | Cry-wolf (false halt) |
-|---|---|---|---|
-| Claude Haiku 4.5 | 26% (21/80) | **11/21** | 0% (0/69) |
-| Qwen3-27B (local) | 14% (10/70) | 0/10 | 0% (0/70) |
-| Claude Sonnet 4.5 | 14% (10/70) | 1/10 | 0% (0/70) |
-| Claude Opus 4.8 | 15% (10/68) | 0/10 | 0% (0/70) |
-
-Read the two tables together: **as the driver strengthens, its residual false-beliefs concentrate into the one case no page-reader can beat.** Haiku is fooled 21 ways and TrueReplay catches the 11 that aren't page-lies; Opus is fooled only 10 times — and all 10 are optimistic-UI, where even Opus believed the order was placed 10/10 times while the server said it failed. Every one of the 40 misses is optimistic-UI; on every other trap TrueReplay is perfect across all four models.
-
-Pre-registered gates: **market exists = true** (Haiku's belief false-success is 26%); **instrument works = false** — but all 39 pooled misses are optimistic-UI, the lying page a page-read can't beat; **cry-wolf 0/279 across every rung** (the false-halt engine holds under a frontier driver); **PUBLISH = false**. The takeaway the ladder proves: the auto page-verdict is near-perfect except against a page that lies — money-critical writes need a declared postcondition or a server signal (the oracle), which is what `expect` provides. Full report: [bench/out/report.md](bench/out/report.md); method in [docs/DAY6.md](docs/DAY6.md); product read in [docs/BUSINESS.md](docs/BUSINESS.md).
-
-## Install
+## Quickstart
 
 ```bash
 npm install truereplay
 ```
 
-## Use
-
-Wrap your Stagehand instance (4.x). Your automation runs unchanged; every `act`/`extract`/`observe`/`goto` is recorded as a replay step on a channel separate from what the agent claims.
-
 ```ts
-import { Stagehand, localBrowser } from "@browserbasehq/stagehand";
-import { withReplay } from "truereplay";
+import { launch } from "truereplay";
 
-const browser = await localBrowser.launch();
-const stagehand = await Stagehand.create({ browser, model: { modelName: "anthropic/claude-sonnet-5", apiKey } });
+// Owns the browser so network verification just works — no port to configure.
+const tr = await launch({ model: { modelName: "anthropic/claude-sonnet-5", apiKey } });
 
-const { act, extract, page, replay } = withReplay(stagehand);
+await tr.page.goto("https://shop.example/checkout");
+await tr.act("click 'Place order'");
 
-await page.goto("https://shop.example/checkout");
-await act("click the 'Place order' button");
-await extract("get the order total", schema);
-
-console.log(replay.steps);   // per-step: kind, action, verdict, evidence, attempt, agent_claim, timestamp
-console.log(replay.verdict); // per-run over write steps: landed | did-not-land | inconclusive
+console.log(tr.replay.verdict);   // "did-not-land"  ← even though the page showed ✅
+console.log(tr.replay.steps);     // per-step: verdict, why, evidence, what the agent claimed
+await tr.close();
 ```
 
-Each write step's `evidence.postcondition.reason` says *why* — `confirmation`, `navigated`, `form-cleared`, `field-match` → `landed`; `validation-error`, or `no-change` under a cookie overlay / login wall → `did-not-land`; `prompt`, `changed-unclassified`, `hash-only-nav`, bare `no-change` → `inconclusive`. Session obstructions and password redaction are automatic. See [docs/DAY3.md](docs/DAY3.md).
+That's the whole runtime API: `launch()`, then your agent runs unchanged. Every `act` / `extract` / `goto` becomes a recorded step on a channel separate from anything the agent says.
 
-For the writes that matter, declare what "landed" means — data, never a callback:
+## See what happened
+
+```bash
+truereplay view run.jsonl
+```
+
+Opens a standalone timeline: every step with its verdict, and for each one the page diff, the network errors, the screenshot, and — boxed off as the untrusted channel — what the agent claimed. It opens on the first step that didn't land. Save a run with `launch({ jsonl: "run.jsonl" })`.
+
+## Gate CI on it
+
+Turn a flaky run into a deterministic test. Write assertions once; re-run them against any recorded run with no browser and no tokens:
 
 ```ts
-await act("click 'Place order'", {
+// assertions.mjs — a function over what the world showed, never the agent's claim
+export default (v) =>
+  v.network.some((n) => (n.status ?? 500) >= 500)
+    ? { ok: false, message: "a request failed behind this step" }
+    : { ok: true };
+```
+
+```bash
+truereplay assert run.jsonl --with assertions.mjs   # exits 1 if any write step fails
+```
+
+## Precision, when a write matters
+
+Auto verdicts need no setup. For the writes you can't get wrong, declare what "landed" means — data, never a callback:
+
+```ts
+await tr.act("click 'Place order'", {
   expect: [
-    { kind: "text", matches: /Order #\d+/, role: "status" },  // a11y-tree line under a status role
-    { kind: "element", selector: "#pay", absent: true },       // negations only tighten
-    // Optimistic UI lies to the page (shows ✅ while the server 500s) and no
-    // page read can tell. `probe` is the out-of-band catch: TrueReplay GETs a
-    // status endpoint itself and matches real server state.
-    { kind: "probe", get: "/api/orders/latest", text: /"placed":true/ },
+    { kind: "text", matches: /Order #\d+/, role: "status" },   // confirmation under a status role
+    { kind: "element", selector: "#pay", absent: true },        // the pay button is gone
+    { kind: "probe", get: "/api/orders/latest", text: /"placed":true/ }, // ask the server itself
   ],
 });
-await replay.finalize({ expect: { kind: "url", matches: "/thank-you" } }); // run-level; can only demote
 ```
 
-Unmet → `did-not-land`. Met lifts only the auto default's uncertain outcomes and never overrides a validation error or an obstruction. Vacuous declarations throw before the write. One shared `waitMs` budget (default 5 s), read-only retries. The `probe` kind is the only one that catches optimistic UI, which Stagehand cannot observe on the wire — it fetches a caller-declared verification URL out of band (never the agent's claim; a broken or unreachable endpoint → `inconclusive`, never a false halt). See [docs/DAY4.md](docs/DAY4.md).
+`probe` is the out-of-band check for optimistic UI a page read can't beat: TrueReplay GETs a status endpoint itself and matches real server state. A broken or unreachable endpoint is `inconclusive`, never a false alarm.
+
+## Prove the record wasn't touched
+
+```bash
+truereplay verify run.jsonl     # recomputes the hash chain, exits 1 at the first break
+```
+
+Every step commits to the one before it, including what the agent claimed. Alter a field, drop a step, or reorder two, and verification fails at that point.
+
+## Bring your own browser
+
+Already launch Chrome yourself? Wrap the Stagehand instance directly. Network verification is then opt-in, since you own the launch:
+
+```ts
+import { withReplay } from "truereplay";
+const tr = withReplay(stagehand, { network: { port } }); // port = your Chrome's --remote-debugging-port
+```
+
+## Does it cry wolf?
+
+A verifier that halts a good run is worse than useless. Across a 520-write benchmark spanning four models weak to strong, TrueReplay raised **zero false halts (0/279)** — its verdict reads the page, so it's the same whoever drives. The one thing a page read alone can't catch is a page that lies (optimistic UI); the network sidecar and `probe` are the out-of-band answers to exactly that. Full method and numbers: [docs/BUSINESS.md](docs/BUSINESS.md), [bench/out/report.md](bench/out/report.md).
 
 ## The rule
 
-TrueReplay never trusts the agent. It reads the page. The agent's claim is recorded on a separate channel and compared only at the end. If those two channels touch during measurement, the false-success number is worthless — so they don't.
+TrueReplay never trusts the agent. It reads the page and the network. The agent's claim is recorded on a separate channel and compared only at the end. If those channels touch during measurement, the number is worthless — so they don't.
+
+## Status
+
+Works today with Stagehand 4.x. Playwright and Browser-Use drivers are next (the reader attaches to Chrome, not the framework). Hermetic test suite, real Chrome, no LLM. Roadmap: [docs/SPEC-V2.md](docs/SPEC-V2.md).
 
 ## License
 

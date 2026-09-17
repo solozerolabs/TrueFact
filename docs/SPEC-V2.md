@@ -194,6 +194,15 @@ M0 gates M2/M5/M7. If M0 fails, M2 becomes "richer Stagehand-side capture" (tree
 
 Proof is at the mechanism level, by a targeted hermetic fixture — not a benchmark re-run. `test/sidecar-network.test.ts` pins the exact trap: an optimistic ✅ over a same-origin 500 → `did-not-land`, while a clean 200 and a third-party 500 are both left alone (the cry-wolf guard). The 520-run ladder established the instrument once (cry-wolf 0/279, optimistic-UI the only miss) and is not re-run; every later change is proven this way. See `[[prove-with-tiny-runs]]`.
 
+## 10b. The surface, and the pivot to outreach (2026-09-17)
+
+Build cost is low; the real constraint is surface area. Rule: **every milestone ships as zero new user-facing concepts** — a reader over the same jsonl, an env var, or a CLI flag. The runtime API is exactly one call in (`withReplay`, or `launch()` for zero-config) and one command out (`truereplay view`). `expect` is there for precision; `assert`/`verify` are CI/compliance plumbing found via `--help`.
+
+- **`launch()` (done):** owns the browser, picks a free debug port, wraps with the network sidecar ON, folds browser teardown into `close()`. Kills the only friction (the port). `withReplay` stays for BYO-browser.
+- **README (done):** rewritten as the one-screen dev pitch — the pain, the zero-config quickstart, `view`, `assert`, `expect`, and the 0/279 cry-wolf line below the fold. It doubles as the outreach artifact and the surface lock: anything that can't fit the one screen goes behind a flag/env/advanced page.
+
+**Decision:** stop building the ladder here and put M0–M4 + `launch()` in front of ~3 real browser-agent developers. The one thing analysis can't settle (do buyers value a trustworthy verdict over zero-config breadth?) is settled by users, not code. Their pull picks what comes next — likely **M7 (Playwright driver, same `withReplay`, widens the funnel)** over M5/M6. When M6–M9 do land, they follow the zero-concept rule: M6 = `truereplay view runs/*.jsonl` (fleet header) + `truereplay gate` (CI exit code); M9 = `TRUEREPLAY_SIGNING_KEY` env + chain status shown in `view`; M5 = `truereplay resume` (CLI, never the wrapper); M8 = auto HTTP + `truereplay mcp -- <server>` proxy.
+
 ## 11. Open questions (settle with users, not analysis)
 
 1. Do buyers value a trustworthy number over zero-config breadth? Three conversations with fintech/ops teams running browser agents at volume.

@@ -52,6 +52,7 @@ export {
 } from "./assert.js";
 export { verifyChain, hashStep, canonical, type ChainResult } from "./chain.js";
 export { renderHtml, viewFile } from "./view.js";
+export { launch, type LaunchOptions, type Launched } from "./launch.js";
 export type StepKind = "write" | "read" | "nav";
 
 export interface Step {
