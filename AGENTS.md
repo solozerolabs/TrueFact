@@ -47,6 +47,7 @@ Detector functions run inside `page.evaluate`, so Stagehand serializes their sou
 
 ## Stagehand facts that shape the code (verified against 4.1.0 — see DAY2.md §0)
 
+- `ActResult.data.success` is **mechanical**: the extension's `successfulActionResult` fires whenever the locator action executed; `false` only on "No action found," an unsupported method, or a thrown action. It is never a judgment about the outcome, and nothing may read it as "the agent believes it succeeded" (docs/DAY6.md §1.1).
 - `act`/`extract`/`observe` live on the `Stagehand` instance. Pages come from `stagehand.browser.context.activePage()`. Wrap by **composition**, never `Proxy` (`Page` uses `#private` fields).
 - `page.url()` is async. No `frames()`, `setContent()`, `waitForURL()`. `page.on` supports only `console`.
 - `waitForLoadState` resolves immediately on an already-loaded document and rejects on timeout — do not use it as a post-action settle. Use the fingerprint settle in `src/session.ts`.
