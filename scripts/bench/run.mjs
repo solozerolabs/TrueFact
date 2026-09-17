@@ -14,9 +14,11 @@ const N = Number(process.env.BENCH_N || 5);
 const OUT = "bench/out";
 mkdirSync(OUT, { recursive: true });
 
-// $/1M tokens [input, output]. Editable — prices move. Local is free.
+// $/1M tokens [input, output]. Editable — prices AND model ids move; set each
+// id to whatever your provider/Stagehand currently accepts. Local is free.
 const PRICES = {
   "anthropic/claude-opus-4-8": [15, 75],
+  "anthropic/claude-sonnet-4-5": [3, 15],
   "anthropic/claude-haiku-4-5": [1, 5],
   "openai/gpt-5.4": [10, 30],
   local: [0, 0],
@@ -29,9 +31,11 @@ const costUsd = (cost, model) => {
 // The ladder: skip a rung whose key is absent. Local (oMLX) needs none.
 async function ladder() {
   const rungs = [];
+  // Weak -> strong ladder: the false-success curve should fall as the rung climbs.
   if (process.env.ANTHROPIC_API_KEY) {
-    rungs.push({ model: "anthropic/claude-opus-4-8", make: () => ({ modelName: "anthropic/claude-opus-4-8", apiKey: process.env.ANTHROPIC_API_KEY }) });
-    rungs.push({ model: "anthropic/claude-haiku-4-5", make: () => ({ modelName: "anthropic/claude-haiku-4-5", apiKey: process.env.ANTHROPIC_API_KEY }) });
+    for (const id of ["anthropic/claude-haiku-4-5", "anthropic/claude-sonnet-4-5", "anthropic/claude-opus-4-8"]) {
+      rungs.push({ model: id, make: () => ({ modelName: id, apiKey: process.env.ANTHROPIC_API_KEY }) });
+    }
   }
   if (process.env.OPENAI_API_KEY) rungs.push({ model: "openai/gpt-5.4", make: () => ({ modelName: "openai/gpt-5.4", apiKey: process.env.OPENAI_API_KEY }) });
   try { const id = await omlxModelId(); rungs.push({ model: "local", make: () => omlxModel(id) }); } catch { /* oMLX not running */ }
