@@ -17,7 +17,12 @@ export type Declaration =
   | { kind: "url"; matches: string | RegExp } // string = substring of the URL without its hash; never equality
   | { kind: "element"; selector: string; absent?: boolean } // css | xpath= | text= (Stagehand's parser)
   | { kind: "text"; matches: string | RegExp; role?: string; absent?: boolean } // innerText, or a11y-tree lines under `role`
-  | { kind: "field"; selector: string; equals: string | RegExp };
+  | { kind: "field"; selector: string; equals: string | RegExp }
+  // Out-of-band reconciliation: TrueReplay GETs `get` itself (relative resolves
+  // against the page URL) and matches real server state — the only signal that
+  // catches optimistic UI, which Stagehand v4 cannot observe on the wire. Data,
+  // not a callback: no verdict path ever sees the agent's claim. See DAY4 §4.
+  | { kind: "probe"; get: string; status?: "ok" | number; text?: string | RegExp; absent?: boolean };
 
 export interface DeclaredResult {
   declaration: Declaration; // `equals` redacted when the target is a password field
@@ -46,6 +51,11 @@ export function validateDeclarations(input: Declaration | Declaration[] | undefi
       case "field":
         if (!d.selector.trim()) throw bad("field.selector is empty");
         break; // equals "" is allowed: it declares a cleared field
+      case "probe":
+        if (!d.get.trim()) throw bad("probe.get is empty");
+        if (d.status === undefined && d.text === undefined) throw bad("probe needs a status or text to match — a bare get asserts nothing");
+        if (d.text !== undefined && isVacuous(d.text)) throw bad("probe.text would match any body");
+        break;
     }
   }
   return list;
@@ -109,6 +119,43 @@ async function checkOne(
       if (!r || !r.found) return { met: null, actual: null, isPassword: false };
       const met = typeof d.equals === "string" ? r.value === d.equals : d.equals.test(r.value);
       return { met, actual: r.value, isPassword: r.isPassword };
+    }
+    case "probe": {
+      // Resolve relative against the page's own origin, then GET it ourselves.
+      let url: string;
+      try {
+        url = new URL(d.get, await page.url()).toString();
+      } catch {
+        return { met: null, actual: null, isPassword: false };
+      }
+      let res: { status: number; ok: boolean; text(): Promise<string> };
+      try {
+        // ponytail: fixed 2s per-fetch timeout so a hung endpoint can't stall the
+        // verdict poll; widen if a legitimate reconciliation call is slower.
+        res = await fetch(url, { method: "GET", signal: AbortSignal.timeout(2000) });
+      } catch {
+        return { met: null, actual: null, isPassword: false }; // unreachable / timeout → inconclusive
+      }
+      const status = res.status;
+      // A broken verify endpoint (5xx) is not evidence the write failed — unless
+      // the caller explicitly declared that 5xx. Never turn probe ill-health into
+      // a false did-not-land.
+      const expectedThis5xx = typeof d.status === "number" && d.status === status;
+      if (status >= 500 && !expectedThis5xx) return { met: null, actual: `HTTP ${status}`, isPassword: false };
+      let ok = true;
+      if (d.status !== undefined) ok = d.status === "ok" ? res.ok : status === d.status;
+      if (ok && d.text !== undefined) {
+        let body: string;
+        try {
+          body = await res.text();
+        } catch {
+          return { met: null, actual: `HTTP ${status}`, isPassword: false };
+        }
+        ok = matches(d.text, body);
+      }
+      // Store only the status line — never the fetched body — so a probe cannot
+      // leak server content into the replay record.
+      return { met: d.absent ? !ok : ok, actual: `HTTP ${status}`, isPassword: false };
     }
   }
 }

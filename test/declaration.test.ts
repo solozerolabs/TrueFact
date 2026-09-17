@@ -20,6 +20,21 @@ describe("validateDeclarations (fail fast on vacuity)", () => {
     assert.deepEqual(validateDeclarations({ kind: "field", selector: "#e", equals: "" }), [{ kind: "field", selector: "#e", equals: "" }]);
     assert.deepEqual(validateDeclarations(undefined), []);
   });
+  it("probe: rejects an empty get, a bare get with no matcher, and a text that matches any body", () => {
+    assert.throws(() => validateDeclarations({ kind: "probe", get: " ", text: /x/ }), /vacuous/);
+    assert.throws(() => validateDeclarations({ kind: "probe", get: "/v" }), /vacuous/);
+    assert.throws(() => validateDeclarations({ kind: "probe", get: "/v", text: /.*/ }), /vacuous/);
+  });
+  it("probe: allows status-only, text-only, both, and absent", () => {
+    for (const d of [
+      { kind: "probe", get: "/v", status: "ok" },
+      { kind: "probe", get: "/v", text: /placed/ },
+      { kind: "probe", get: "/v", status: 200, text: /placed/ },
+      { kind: "probe", get: "/v", text: /placed/, absent: true },
+    ] as Declaration[]) {
+      assert.deepEqual(validateDeclarations(d), [d]);
+    }
+  });
 });
 
 describe("applyDeclarations (pure composition, DAY4 §3)", () => {

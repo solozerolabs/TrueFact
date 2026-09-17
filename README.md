@@ -71,12 +71,16 @@ await act("click 'Place order'", {
   expect: [
     { kind: "text", matches: /Order #\d+/, role: "status" },  // a11y-tree line under a status role
     { kind: "element", selector: "#pay", absent: true },       // negations only tighten
+    // Optimistic UI lies to the page (shows ✅ while the server 500s) and no
+    // page read can tell. `probe` is the out-of-band catch: TrueReplay GETs a
+    // status endpoint itself and matches real server state.
+    { kind: "probe", get: "/api/orders/latest", text: /"placed":true/ },
   ],
 });
 await replay.finalize({ expect: { kind: "url", matches: "/thank-you" } }); // run-level; can only demote
 ```
 
-Unmet → `did-not-land`. Met lifts only the auto default's uncertain outcomes and never overrides a validation error or an obstruction. Vacuous declarations throw before the write. One shared `waitMs` budget (default 5 s), read-only retries. See [docs/DAY4.md](docs/DAY4.md).
+Unmet → `did-not-land`. Met lifts only the auto default's uncertain outcomes and never overrides a validation error or an obstruction. Vacuous declarations throw before the write. One shared `waitMs` budget (default 5 s), read-only retries. The `probe` kind is the only one that catches optimistic UI, which Stagehand cannot observe on the wire — it fetches a caller-declared verification URL out of band (never the agent's claim; a broken or unreachable endpoint → `inconclusive`, never a false halt). See [docs/DAY4.md](docs/DAY4.md).
 
 ## The rule
 
