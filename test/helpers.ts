@@ -92,6 +92,7 @@ export const step = (over: Partial<Step> = {}): Step => ({
   evidence: { before: null, after: null, settled: true, session: session() },
   attempt: null,
   agent_claim: null,
+  cost: null,
   timestamp: "",
   ...over,
 });
@@ -107,6 +108,7 @@ export interface FakeSpec {
   actions: ActionSpec[]; // performed in order, all reported
   success?: boolean;
   message?: string;
+  usage?: Record<string, number>; // Stagehand result metadata.usage, for cost tests
 }
 
 /**
@@ -133,7 +135,7 @@ export function fakeStagehand(stagehand: Stagehand, page: Page, spec: ActionSpec
           actionDescription: fs.actions.map((a) => a.selector).join(","),
           actions: fs.actions.map((a) => ({ selector: a.reportSelector ?? a.selector, description: "", method: a.method ?? "click", arguments: a.args ?? [] })),
         },
-        metadata: {},
+        metadata: fs.usage ? { usage: fs.usage } : {},
       };
     },
     extract: ((...a: unknown[]) => (stagehand.extract as (...x: unknown[]) => unknown)(...a)) as Stagehand["extract"],
