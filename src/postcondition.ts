@@ -34,7 +34,8 @@ export type PostReason =
   | "unsettled"
   | "declared-met"
   | "declared-unmet"
-  | "declared-unreadable";
+  | "declared-unreadable"
+  | "network-error";
 
 export interface FormValue {
   value: string; // passwords already stored as "<redacted:N>"
@@ -68,6 +69,7 @@ export interface Postcondition extends Outcome {
   formsAfter: Record<string, FormValue>;
   field?: { selector: string; expected: string; actual: string | null };
   declared?: DeclaredResult[];
+  network?: { errors: { url: string; status: number | null }[] }; // same-origin 5xx/failed in the write window
 }
 
 const EMPTY_FP: Fingerprint = { href: "", readyState: "", bodyTextLength: 0, elementCount: 0, title: "" };
@@ -285,6 +287,23 @@ export function sessionVerdict(current: Verdict, session: SessionEvidence, reaso
   if (reason === "no-change") return "did-not-land";
   if (current === "landed") return "inconclusive";
   return current;
+}
+
+/**
+ * Compose the page-read verdict with the network sidecar (M2). A same-origin
+ * server error / failed request in the write window means the write's own
+ * backend rejected it — did-not-land, high — and this overrides an optimistic
+ * confirmation (page ✅, server 500), the one trap a page read cannot beat.
+ *
+ * It only demotes: it never lifts, never argues with a mechanism-backed
+ * did-not-land (that verdict keeps its own reason), and does nothing on an
+ * empty error set. Same-origin filtering is the caller's (see sidecar): a
+ * third-party analytics 500 is not evidence the write failed, so it never
+ * reaches here — that is the cry-wolf guard.
+ */
+export function applyNetwork(current: Verdict, errors: { url: string; status: number | null }[]): Outcome | null {
+  if (current === "did-not-land" || errors.length === 0) return null;
+  return { verdict: "did-not-land", reason: "network-error", confidence: "high" };
 }
 
 /**

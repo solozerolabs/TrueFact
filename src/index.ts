@@ -13,6 +13,7 @@ import type {
 } from "@browserbasehq/stagehand";
 import { detectSession, fingerprint, settle, type Fingerprint, type SessionEvidence } from "./session.js";
 import {
+  applyNetwork,
   captureState,
   decideWrite,
   readTree,
@@ -21,6 +22,7 @@ import {
   type Postcondition,
   type Verdict,
 } from "./postcondition.js";
+import { attachSidecar, type Sidecar } from "./sidecar.js";
 import {
   applyDeclarations,
   checkDeclarations,
@@ -78,6 +80,11 @@ export interface ReplayOptions {
   screenshotDir?: string; // default ".truereplay/screenshots"
   waitMs?: number; // one budget for the auto no-change poll and declared checks (default 5000)
   jsonl?: string; // if set, append one redacted step per line as the run proceeds
+  // Opt-in network verification (M2). Attaches a second CDP client to the Chrome
+  // launched with `localBrowser.launch({ port })` and demotes an optimistic write
+  // (page ✅) to did-not-land when its own backend returned a same-origin 5xx.
+  // Off by default: the certified 0-false-halt page-read verdict is unchanged.
+  network?: { port: number };
 }
 
 export type ActOptions = StagehandClientActOptions & {
@@ -91,6 +98,7 @@ export interface Wrapped {
   observe: Stagehand["observe"];
   page: { goto(url: string, opts?: unknown): Promise<unknown>; current(): Promise<Page> };
   replay: Replay;
+  close(): Promise<void>; // release the network sidecar (no-op when network is off)
 }
 
 /** Run verdict rolls up over write steps only; a read/nav never decides it. */
@@ -209,6 +217,12 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
     return page;
   };
 
+  // Attach the network sidecar once, lazily. Network.enable is persistent, so
+  // enabling it here (before the first write's click) covers every later write.
+  let sidecarPromise: Promise<Sidecar | null> | null = null;
+  const sidecar = (): Promise<Sidecar | null> =>
+    (sidecarPromise ??= opts.network ? attachSidecar(opts.network.port) : Promise.resolve(null));
+
   const replay = new ReplayImpl(async (decls) => {
     const page = await activePage();
     await settle(page);
@@ -247,6 +261,11 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
     const isWrite = kind === "write";
     const beforeState = isWrite ? await captureState(beforePage) : null;
     const beforeFp = beforeState ? beforeState.fp : await fingerprint(beforePage);
+
+    // Mark the network stream just before the write so errorsSince() sees only
+    // this step's requests. Only writes are network-verified.
+    const sc = isWrite ? await sidecar() : null;
+    const netMark = sc ? sc.mark() : 0;
 
     let claim: unknown = null;
     let threw: unknown = null;
@@ -299,7 +318,22 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
     if (pageSwitched) post.newPageUrl = await page.url().catch(() => "");
 
     const session = await detectSession(page);
-    const verdict = decision.kind === "write" ? sessionVerdict(post.verdict, session, post.reason) : post.verdict;
+    let verdict = decision.kind === "write" ? sessionVerdict(post.verdict, session, post.reason) : post.verdict;
+
+    // M2: a same-origin server error in this write's window overrides an
+    // optimistic page-read verdict. errorsSince() filters to the page origin, so
+    // a third-party analytics 500 never fires this (the cry-wolf guard).
+    if (sc) {
+      const errors = sc.errorsSince(netMark, new URL(beforeState!.fp.href || "http://x").origin);
+      const net = applyNetwork(verdict, errors);
+      if (net) {
+        post.verdict = net.verdict;
+        post.reason = net.reason;
+        post.confidence = net.confidence;
+        verdict = net.verdict;
+      }
+      if (errors.length) post.network = { errors };
+    }
 
     let attempt = actions;
     if (attempt && decision.isPassword) {
@@ -343,5 +377,8 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
       current: activePage,
     },
     replay,
+    close: async () => {
+      (await sidecar())?.close();
+    },
   };
 }

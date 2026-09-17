@@ -181,7 +181,7 @@ One static HTML file that loads a JSONL. Left: intent, verdict, assertion result
 |---|---|---|---|
 | M0 | ✅ **DONE 2026-09-17** — optimistic-UI 500 visible from a second CDP client while Stagehand drives (`scripts/m0-sidecar.mjs`) | — | 0.5 d |
 | M1 | Packet format + hash chain + JSONL writer; migrate current step record into it | — | 1 d |
-| M2 | Browser reader on the sidecar (tree/forms/network/storage), Stagehand as driver adapter; verdict gains `network-error` reason | M0 | 2 d |
+| M2 | ✅ **DONE 2026-09-17 (network slice)** — opt-in `withReplay(sh, { network: { port } })` sidecar; same-origin 5xx/failed request in a write's window → `did-not-land`/`network-error` (high), overriding an optimistic ✅. `src/sidecar.ts` + pure `applyNetwork`. 157 tests incl. cry-wolf guard (3rd-party 500 does not halt). **Deferred:** tree/forms via CDP (Stagehand still reads them) and `storage` capture — pulled forward only when M7 (cross-driver) / M5 (resume) need them. | M0 | 2 d |
 | M3 | Assertion engine (`defineAssertions`), live + `truereplay assert` offline | M1 | 1 d |
 | M4 | Timeline page + `truereplay view` | M1 | 1 d |
 | M5 | Resume from checkpoint | M2 | 1 d |
@@ -192,7 +192,7 @@ One static HTML file that loads a JSONL. Left: intent, verdict, assertion result
 
 M0 gates M2/M5/M7. If M0 fails, M2 becomes "richer Stagehand-side capture" (tree, forms, storage, screenshots; no network) and the value line shifts to §5.1 + §7 + §8, which don't need it.
 
-Benchmark re-run after M2 is the proof: the 520-run table with the optimistic-UI row moved from `landed 40/40 (missed)` to `did-not-land`.
+Benchmark re-run after M2 is the proof: the 520-run table with the optimistic-UI row moved from `landed 40/40 (missed)` to `did-not-land`. **Status:** the mechanism is proven at fixture level (`test/sidecar-network.test.ts` — an optimistic ✅ over a same-origin 500 → `did-not-land`, a clean 200 and a third-party 500 both left alone). The full 520-run re-run is a separate step: `scripts/bench/run.mjs` must launch Chrome with `{ port }` and pass `network: { port }`, then it needs the API keys. Until then the fixture is the evidence.
 
 ## 11. Open questions (settle with users, not analysis)
 
