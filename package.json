@@ -14,7 +14,8 @@
     "test": "node --import tsx --test \"test/*.test.ts\"",
     "probe": "node scripts/probe-stagehand.mjs",
     "probe:act": "node --env-file=.env scripts/probe-overlay-act.mjs",
-    "probe:omlx": "node scripts/probe-omlx-act.mjs"
+    "probe:omlx": "node scripts/probe-omlx-act.mjs",
+    "probe:tree": "node scripts/probe-tree.mjs"
   },
   "keywords": [
     "browser-agent",

@@ -1,6 +1,11 @@
 # AGENTS.md — working in this repo
 
-TrueReplay is a TypeScript/npm wrapper around Stagehand that records what a browser agent did and computes an independent `landed / did-not-land / inconclusive` verdict per write by reading the live page. Read [SPEC.md](SPEC.md) (product), [docs/DAY2.md](docs/DAY2.md) (built: session detection, verified Stagehand facts), [docs/DAY3.md](docs/DAY3.md) (built: auto postcondition) and [docs/DAY4.md](docs/DAY4.md) (built: declared postconditions + nine Day 3 revisions) before changing anything. Next: Day 5 (grounding for `extract` against `snapshot().formattedTree`).
+TrueReplay is a TypeScript/npm wrapper around Stagehand that records what a browser agent did and computes an independent `landed / did-not-land / inconclusive` verdict per write by reading the live page. Read [SPEC.md](SPEC.md) (product), [docs/DAY2.md](docs/DAY2.md) (built: session detection, verified Stagehand facts), [docs/DAY3.md](docs/DAY3.md) (built: auto postcondition) and [docs/DAY4.md](docs/DAY4.md) (built: declared postconditions + nine Day 3 revisions) before changing anything. Next: Day 5 — spec'd in [docs/DAY5.md](docs/DAY5.md) (grounding for `extract` against the a11y tree; R10 fix to role-scoped `text` declarations), not yet built.
+
+Day 5 facts (probed, `npm run probe:tree`):
+- `snapshot().formattedTree` splits text across inline markup into separate `StaticText:` lines (`Total: <strong>$1,249.00</strong>` is two lines). Never match a value per line; match over the role-stripped lines joined with a space.
+- The tree includes input values, `[selected]`/`[checked]`, `alt`, `aria-label`, shadow DOM, iframe content and below-the-fold text; it omits `title` attributes, `display:none` and `aria-hidden` content; passwords are masked. Whitespace is already collapsed.
+- `extract` reads the same accessibility tree (plus a viewport screenshot with `screenshot: true`); its options are a strict object (`model`, `timeout`, `screenshot`, `cache`, `locator`, `ignoreLocators`, `page`). `options.page` can target a non-active tab — read the tree from that page.
 
 Day 4 rules (see DAY4.md §0):
 - Declarations are **data** (`Declaration` tagged union), never callbacks. A callback can read `ActResult`; that is the agent's claim inside a verdict.
@@ -27,13 +32,15 @@ npm run build          # tsc → dist/
 npm test               # node --import tsx --test "test/*.test.ts"  (needs local Chrome; no LLM key)
 npm run probe          # scripts/probe-stagehand.mjs — API sanity vs installed Stagehand; run after any bump
 npm run probe:act      # one real act on a blocked submit; reads ANTHROPIC_API_KEY or OPENAI_API_KEY from a git-ignored .env
+npm run probe:omlx     # the same trap through a local oMLX model, no cloud key (docs/PROBES.md run 2)
+npm run probe:tree     # what snapshot().formattedTree contains — the Day 5 grounding facts
 ```
 
 Detector functions run inside `page.evaluate`, so Stagehand serializes their source: use plain loops and inline arrows, never a `.find(namedFunction)` reference (it silently returns nothing — see the login detector).
 
 ## Invariants (do not negotiate these in a PR)
 
-1. **The two channels never touch.** `agent_claim` (Stagehand's `ActResult.data.success/message`) and `evidence` (what we read from the page) are separate fields. No function that computes a verdict may receive `agent_claim`. `attempt` (`ActResult.data.actions[]`) may be used only to decide *where* to read the page, never as evidence of outcome.
+1. **The two channels never touch.** `agent_claim` (Stagehand's `ActResult.data.success/message`) and `evidence` (what we read from the page) are separate fields. No function that computes a write verdict may receive `agent_claim`. `attempt` (`ActResult.data.actions[]`) may be used only to decide *where* to read the page, never as evidence of outcome. Read verdicts are the designed exception: grounding compares an `extract`'s returned `data` to the page because that data is the object under test — but no write verdict may consume an extraction, and no read verdict may consume `success`/`message`.
 2. **Heuristic ⇒ `inconclusive`.** Only a high-confidence, mechanism-backed obstruction (`blank`, persistent `captcha`, corroborated `login-wall`) may produce `did-not-land`. A false `did-not-land` lands in the benchmark's headline bucket and biases the instrument toward its own thesis.
 3. **A checker that cannot read the page says `inconclusive`, never `landed`.**
 4. **Run verdict rolls up over `kind === "write"` steps only.**
@@ -43,8 +50,7 @@ Detector functions run inside `page.evaluate`, so Stagehand serializes their sou
 - `act`/`extract`/`observe` live on the `Stagehand` instance. Pages come from `stagehand.browser.context.activePage()`. Wrap by **composition**, never `Proxy` (`Page` uses `#private` fields).
 - `page.url()` is async. No `frames()`, `setContent()`, `waitForURL()`. `page.on` supports only `console`.
 - `waitForLoadState` resolves immediately on an already-loaded document and rejects on timeout — do not use it as a post-action settle. Use the fingerprint settle in `src/session.ts`.
-- `Stagehand.create({ browser })` works with no model; tests and scripts attach a local Chrome this way. `act` needs a model.
-- Fixtures load via `page.goto("data:text/html," + encodeURIComponent(html))`.
+- `Stagehand.create({ browser })` works with no model; tests and scripts attach a local Chrome this way. `act`, `extract` and `observe` need a model — tests fake them via `fakeStagehand` and keep the browser real.
 
 ## Style
 
