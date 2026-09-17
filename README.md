@@ -6,15 +6,20 @@ The gap between "agent said done" and "page says done" is the product.
 
 > **Proven on a real agent:** a local model driving Stagehand clicked "Place order" onto a cookie overlay, Stagehand reported `success: true`, the order was never placed, and TrueReplay independently said `did-not-land`. See [docs/FINDINGS.md](docs/FINDINGS.md) and [docs/PROBES.md](docs/PROBES.md).
 
-> **Status: Days 1–4 of a 7-day MVP built.** Session-state detection ([docs/DAY2.md](docs/DAY2.md)), the auto-inferred postcondition ([docs/DAY3.md](docs/DAY3.md)) and declared postconditions ([docs/DAY4.md](docs/DAY4.md)) ship with 92 hermetic tests (~12 s, real Chrome, no LLM). Roadmap in [SPEC.md](SPEC.md).
+> **Status: Days 1–6 of a 7-day MVP built.** Session-state detection ([docs/DAY2.md](docs/DAY2.md)), the auto-inferred postcondition ([docs/DAY3.md](docs/DAY3.md)), declared postconditions ([docs/DAY4.md](docs/DAY4.md)), extract grounding ([docs/DAY5.md](docs/DAY5.md)) and the benchmark harness ([docs/DAY6.md](docs/DAY6.md)) ship with 142 hermetic tests (~12 s, real Chrome, no LLM). Day 7 (final day) specced ([docs/DAY7.md](docs/DAY7.md)). Roadmap in [SPEC.md](SPEC.md).
 
 ## Benchmark
 
-_The headline is a write-side false-success number. It doesn't exist yet — Day 6 produces it. Table lands here when it does._
+First measured pilot — one local model driving Stagehand across the fixture suite, oracle = server-recorded POST, no LLM in the scorer. **Not yet certified:** _n_ is below the pre-registered publish gate, which still reads `PUBLISH: false — insufficient-n`. The headline write-side false-success number is Day 6 proper (_n_ ≥ 200); this pilot is the direction, not the claim.
 
-| Setup | Reported success | Actually landed | **Reported-success / did-not-land** |
-|---|---|---|---|
-| _pending Day 6_ | — | — | — |
+| Pilot — local model via Stagehand, _n_ = 30 | Rate |
+|---|---|
+| Agent reported success, write never landed | 60% (18/30) |
+| — TrueReplay caught it (`did-not-land`) | 83% (15/18) |
+| — residual miss | 17% (3/18) |
+| Cry-wolf — `did-not-land` on a write that **did** land (false halt) | 0% (0/12) |
+
+Three hard false-halt shapes — masked input, stray validation, non-covering modal — are closed and regression-tested ([test/bench-fixtures.test.ts](test/bench-fixtures.test.ts)). Full pilot: [bench/out/report.md](bench/out/report.md); method in [docs/DAY6.md](docs/DAY6.md); what it means for the product in [docs/BUSINESS.md](docs/BUSINESS.md).
 
 ## Install
 
