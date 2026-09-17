@@ -58,9 +58,10 @@ not a rate — but the instrument is now demonstrated end to end on genuine agen
 ## Reproduce
 
 ```bash
-# frontier: spin a blind agent against scripts/false-success-fixture.mjs (see git history)
-# local, no key — requires oMLX running with any instruct model:
-npm run probe:omlx     # reads the oMLX port + key from ~/.omlx/settings.json at runtime
+# both probes now run against the shared bench fixture (scripts/bench/fixtures.mjs,
+# the overlay-checkout task) with the server /truth endpoint as the oracle.
+npm run probe:omlx     # local, no cloud key — reads the oMLX port + key from ~/.omlx/settings.json
+npm run probe:act      # a real cloud model — reads ANTHROPIC_API_KEY / OPENAI_API_KEY from a git-ignored .env
 ```
 
 The oMLX adapter (`scripts/omlx-model.mjs`) wires a local OpenAI-compatible server to

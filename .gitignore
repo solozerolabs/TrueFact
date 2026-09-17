@@ -3,3 +3,4 @@ dist/
 .truereplay/
 *.log
 .env
+bench/out/

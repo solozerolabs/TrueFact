@@ -1,6 +1,6 @@
 # AGENTS.md — working in this repo
 
-TrueReplay is a TypeScript/npm wrapper around Stagehand that records what a browser agent did and computes an independent `landed / did-not-land / inconclusive` verdict per write by reading the live page. Read [SPEC.md](SPEC.md) (product), [docs/DAY2.md](docs/DAY2.md) (built: session detection, verified Stagehand facts), [docs/DAY3.md](docs/DAY3.md) (built: auto postcondition) and [docs/DAY4.md](docs/DAY4.md) (built: declared postconditions + nine Day 3 revisions) before changing anything. Built: Day 5 — grounding for `extract` against the a11y tree ([src/grounding.ts](src/grounding.ts)), the R10 fix to role-scoped `text` declarations, and the `readTree` DRY extraction; see [docs/DAY5.md](docs/DAY5.md). Next: Day 6 — spec'd in [docs/DAY6.md](docs/DAY6.md) (the benchmark: three channels — agent claim, TrueReplay verdict, fixture-server oracle — joined only by a pure `src/bench.ts` scorer; MISS-rate headline with Wilson intervals; two pre-registered gates), not yet built.
+TrueReplay is a TypeScript/npm wrapper around Stagehand that records what a browser agent did and computes an independent `landed / did-not-land / inconclusive` verdict per write by reading the live page. Read [SPEC.md](SPEC.md) (product), [docs/DAY2.md](docs/DAY2.md) (built: session detection, verified Stagehand facts), [docs/DAY3.md](docs/DAY3.md) (built: auto postcondition) and [docs/DAY4.md](docs/DAY4.md) (built: declared postconditions + nine Day 3 revisions) before changing anything. Built: Day 5 — grounding for `extract` against the a11y tree ([src/grounding.ts](src/grounding.ts)), the R10 fix to role-scoped `text` declarations, and the `readTree` DRY extraction; see [docs/DAY5.md](docs/DAY5.md). Built: Day 6 — the benchmark harness: the pure scorer ([src/bench.ts](src/bench.ts)), the one fixture source with a server oracle ([scripts/bench/fixtures.mjs](scripts/bench/fixtures.mjs)), the runner and re-scorer ([scripts/bench/run.mjs](scripts/bench/run.mjs), [scripts/bench/score.mjs](scripts/bench/score.mjs)); see [docs/DAY6.md](docs/DAY6.md). The ladder run itself needs a key (or the local oMLX rung) and has not been executed. Next: Day 7 (publish) — iff a real run clears Gate A ∧ Gate B.
 
 Day 5 facts (probed, `npm run probe:tree`):
 - `snapshot().formattedTree` splits text across inline markup into separate `StaticText:` lines (`Total: <strong>$1,249.00</strong>` is two lines). Never match a value per line; match over the role-stripped lines joined with a space.
@@ -34,7 +34,14 @@ npm run probe          # scripts/probe-stagehand.mjs — API sanity vs installed
 npm run probe:act      # one real act on a blocked submit; reads ANTHROPIC_API_KEY or OPENAI_API_KEY from a git-ignored .env
 npm run probe:omlx     # the same trap through a local oMLX model, no cloud key (docs/PROBES.md run 2)
 npm run probe:tree     # what snapshot().formattedTree contains — the Day 5 grounding facts
+npm run bench          # Day 6: run the fixture suite × model ladder (needs .env; local oMLX rung needs none)
+npm run bench:score    # re-score bench/out/oracle.jsonl with the pure scorer (no browser, no key)
 ```
+
+Day 6 benchmark rules (docs/DAY6.md):
+- Three channels, never crossed: `agent_claim` and `verdict` in the replay, the fixture server's own state as the oracle. **The wrapped page never receives the `/truth` URL** — the runner reads it out of band; a fixture without a server-side oracle is not a benchmark fixture.
+- Two claims, two rows: `claimExec` (Stagehand's mechanical `success`) and `claimBelief` (the model's post-act self-assessment via a fixed `extract` question, registered pre-run). The scorer (`src/bench.ts`) is pure and is the only place the three channels meet.
+- Gates read point estimates over count floors, never interval bounds (a zero-event 95% upper bound is 3.7% at n=100 — unreachable at MVP scale). `scripts/bench/fixtures.mjs` is the one fixture source; the overlay probes import it.
 
 Detector functions run inside `page.evaluate`, so Stagehand serializes their source: use plain loops and inline arrows, never a `.find(namedFunction)` reference (it silently returns nothing — see the login detector).
 
