@@ -56,7 +56,7 @@ Owned apps only — junk writes into third-party sites are unethical, against To
 | `silent-noop` | the button handler is a no-op | order recorded (never) | bare dead click → `inconclusive` (not `did-not-land` unless corroborated — R2) |
 | `slow-confirm` | `POST` succeeds, banner renders at ~1.5 s | `POST /order` received | the extended-wait path lands, not a premature miss |
 | `clean-settings` | none; a save that re-renders in place with no navigation | `POST /settings` received | a second real landing shape (SPA-style) so cry-wolf and U are measured on more than checkouts |
-| `clean-form` | none; a fill + submit that navigates to a receipt | `POST /signup` received | a third real landing shape; also exercises the mixed fill + click path (R1) |
+| `clean-form` | none; a single submit that navigates to a receipt | `POST /signup` received | a third real landing shape — landing *via navigation* (one decisive click; §0.7). The pre-filled field keeps it realistic without making the oracle depend on the agent doing two steps — a real local run did only the fill and left the write unsent, which is a trap, not a clean landing |
 
 **Balance.** Five of the eight write traps can never land by construction, so without the three `clean-*` tasks the cry-wolf and under-confidence denominators would be ~50 real landings — too few to say anything (§6). With three landing tasks × 5 rungs × 5 runs the denominator is 75; raise runs to 8 on the landing tasks if the floor in §6 is not met.
 

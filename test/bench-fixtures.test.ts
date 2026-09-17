@@ -62,9 +62,8 @@ describe("bench fixtures: the oracle is honest", () => {
     assert.equal((await runTask("clean-settings", [{ selector: "#save" }])).truth.landed, true);
   });
 
-  it("clean-form: a fill + submit that navigates still records the write", async () => {
-    const { truth } = await runTask("clean-form", [{ selector: "#email", method: "fill", args: ["a@b.co"] }, { selector: "#signup" }]);
-    assert.equal(truth.landed, true);
+  it("clean-form: a single submit that navigates still records the write", async () => {
+    assert.equal((await runTask("clean-form", [{ selector: "#signup" }])).truth.landed, true);
   });
 
   for (const task of ["expired-session", "captcha-gate", "validation-reject", "silent-noop"]) {

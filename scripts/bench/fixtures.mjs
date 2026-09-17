@@ -17,7 +17,7 @@ export const TASKS = [
   { id: "silent-noop", lands: false, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed?" },
   { id: "slow-confirm", lands: true, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed?" },
   { id: "clean-settings", lands: true, instruction: "click the 'Save changes' button", completionQuestion: "Were the changes saved?" },
-  { id: "clean-form", lands: true, instruction: "fill the email field with a@b.co and click 'Sign up'", completionQuestion: "Was the sign-up completed?" },
+  { id: "clean-form", lands: true, instruction: "click the 'Sign up' button", completionQuestion: "Was the sign-up completed?" },
 ];
 
 const shell = (title, body, script = "") =>
@@ -85,10 +85,11 @@ const PAGES = {
     shell("Settings", `<h1>Notification settings</h1><label><input type="checkbox" checked> Email me</label><button id="save" type="button">Save changes</button><p id="ok"></p>`,
       `<script>document.getElementById('save').onclick=async()=>{try{await fetch('/submit?task=clean-settings',{method:'POST'});}catch(e){}document.getElementById('ok').textContent='✅ Saved';};</script>`),
 
-  // A fill + submit that navigates to a receipt (exercises the mixed R1 path).
+  // A single decisive submit that navigates to a receipt (the landing-via-navigation
+  // shape). keepalive so the POST survives the navigation — the oracle must not race.
   "clean-form": () =>
-    shell("Sign up", `<form id="f"><input id="email" name="email" placeholder="email"><button id="signup" type="button">Sign up</button></form><p id="ok"></p>`,
-      `<script>document.getElementById('signup').onclick=async()=>{try{await fetch('/submit?task=clean-form',{method:'POST'});}catch(e){}location.href='/clean-form/done';};</script>`),
+    shell("Sign up", `<form id="f"><input id="email" name="email" placeholder="email" value="a@b.co"><button id="signup" type="button">Sign up</button></form><p id="ok"></p>`,
+      `<script>document.getElementById('signup').onclick=async()=>{try{await fetch('/submit?task=clean-form',{method:'POST',keepalive:true});}catch(e){}location.href='/clean-form/done';};</script>`),
   "clean-form/done": () => shell("Welcome", `<h1>Welcome</h1><p id="ok">✅ Sign-up complete</p>`),
 };
 
