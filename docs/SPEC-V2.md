@@ -182,7 +182,7 @@ One static HTML file that loads a JSONL. Left: intent, verdict, assertion result
 | M0 | ✅ **DONE 2026-09-17** — optimistic-UI 500 visible from a second CDP client while Stagehand drives (`scripts/m0-sidecar.mjs`) | — | 0.5 d |
 | M1 | Packet format + hash chain + JSONL writer; migrate current step record into it | — | 1 d |
 | M2 | ✅ **DONE 2026-09-17 (network slice)** — opt-in `withReplay(sh, { network: { port } })` sidecar; same-origin 5xx/failed request in a write's window → `did-not-land`/`network-error` (high), overriding an optimistic ✅. `src/sidecar.ts` + pure `applyNetwork`. 157 tests incl. cry-wolf guard (3rd-party 500 does not halt). **Deferred:** tree/forms via CDP (Stagehand still reads them) and `storage` capture — pulled forward only when M7 (cross-driver) / M5 (resume) need them. | M0 | 2 d |
-| M3 | Assertion engine (`defineAssertions`), live + `truereplay assert` offline | M1 | 1 d |
+| M3 | ✅ **DONE 2026-09-17 (offline slice)** — assertion engine (`defineAssertions`, `BrowserView`, `pass`/`fail`) + offline re-assert: `reassert(steps, a)` (pure), `reassertFile(jsonl, module)`, and `truereplay assert <run.jsonl> --with <mod.mjs>` (exits 1 on any failing write step, drops into CI). `src/assert.ts` + `src/cli.ts`, 167 tests. **Deferred:** live callback gating in the write path — declarative `expect` already gates live; add `act(i, { assert: fn })` when a user needs logic `expect` can't express. Runs over today's `Step` jsonl; migrates to the M1 packet when that lands. | M1 | 1 d |
 | M4 | Timeline page + `truereplay view` | M1 | 1 d |
 | M5 | Resume from checkpoint | M2 | 1 d |
 | M6 | Queue / fleet number / canary halt / compare (library API + one page) | M1 | 1 d |

@@ -1,0 +1,97 @@
+// M3 — the assertion engine (offline re-assert). An assertion is a function over
+// a BROWSER VIEW: what the world showed after a write, reconstructed from a
+// recorded step. It never receives the agent's claim, so the two-channel rule
+// (docs/DAY2) holds for callbacks exactly as it does for declared `expect`.
+//
+// The value: change an assertion, re-run it against a stored run (a `jsonl`
+// from withReplay) with no browser and no model — see which historical steps
+// now pass or fail. A flaky agent run becomes a deterministic, $0 unit test.
+// See docs/SPEC-V2.md §4 / §5.1.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import type { Step } from "./index.js";
+import type { FormValue, Verdict } from "./postcondition.js";
+
+/** What an assertion sees for one write step. All evidence, never the claim. */
+export interface BrowserView {
+  action: string;
+  url: string; // the page URL after the write
+  verdict: Verdict; // TrueReplay's own recorded verdict (evidence, for reference)
+  treeAdded: string[]; // a11y-tree lines that appeared
+  treeRemoved: string[]; // a11y-tree lines that disappeared
+  forms: Record<string, FormValue>; // field values after the write (passwords redacted)
+  network: { url: string; status: number | null }[]; // same-origin 5xx/failed in the write window
+}
+
+export interface AssertResult {
+  ok: boolean;
+  message?: string;
+}
+export const pass = (): AssertResult => ({ ok: true });
+export const fail = (message: string): AssertResult => ({ ok: false, message });
+
+export type BrowserAssertion = (v: BrowserView) => AssertResult;
+export interface Assertions {
+  browser?: BrowserAssertion; // only browser today; http/mcp/cli join when their recorders land (§3)
+}
+
+/** Identity helper for types + a default-export a module can carry. */
+export const defineAssertions = (a: Assertions): Assertions => a;
+
+/** A module's default export may be an Assertions object or a bare browser fn. */
+export function toAssertions(mod: unknown): Assertions {
+  const d = (mod as { default?: unknown })?.default ?? mod;
+  if (typeof d === "function") return { browser: d as BrowserAssertion };
+  if (d && typeof d === "object" && "browser" in d) return d as Assertions;
+  throw new Error("TrueReplay: assertion module must default-export a function or { browser } (see defineAssertions)");
+}
+
+/** Reconstruct a write step's browser view from its recorded evidence. */
+export function viewOf(step: Step): BrowserView | null {
+  const p = step.evidence.postcondition;
+  if (step.kind !== "write" || !p) return null;
+  return {
+    action: step.action,
+    url: step.evidence.after?.href ?? "",
+    verdict: step.verdict,
+    treeAdded: p.treeAdded ?? [],
+    treeRemoved: p.treeRemoved ?? [],
+    forms: p.formsAfter ?? {},
+    network: p.network?.errors ?? [],
+  };
+}
+
+export interface ReassertItem {
+  index: number; // position in the run
+  action: string;
+  ok: boolean;
+  message?: string;
+}
+export interface ReassertReport {
+  total: number; // write steps evaluated
+  failed: number;
+  items: ReassertItem[];
+}
+
+/** Evaluate the assertion against every write step. Pure: no fs, no browser. */
+export function reassert(steps: Step[], a: Assertions): ReassertReport {
+  const items: ReassertItem[] = [];
+  steps.forEach((s, i) => {
+    const v = viewOf(s);
+    if (!v || !a.browser) return;
+    const r = a.browser(v);
+    items.push({ index: i, action: s.action, ok: r.ok, message: r.message });
+  });
+  return { total: items.length, failed: items.filter((x) => !x.ok).length, items };
+}
+
+/** Read a `jsonl` run + an assertion module, and reassert. */
+export async function reassertFile(jsonlPath: string, modulePath: string): Promise<ReassertReport> {
+  const steps = readFileSync(jsonlPath, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as Step);
+  const mod = await import(pathToFileURL(resolve(modulePath)).href);
+  return reassert(steps, toAssertions(mod));
+}

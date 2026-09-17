@@ -35,6 +35,20 @@ import { redactText } from "./redact.js";
 
 export type { Verdict, Postcondition, SessionEvidence, Fingerprint, Declaration, DeclaredResult, Grounding, GroundingReason };
 export { sessionVerdict, applyDeclarations, validateDeclarations, groundValues };
+export {
+  defineAssertions,
+  reassert,
+  reassertFile,
+  viewOf,
+  pass,
+  fail,
+  type BrowserView,
+  type BrowserAssertion,
+  type Assertions,
+  type AssertResult,
+  type ReassertReport,
+  type ReassertItem,
+} from "./assert.js";
 export type StepKind = "write" | "read" | "nav";
 
 export interface Step {
