@@ -1,6 +1,15 @@
 # AGENTS.md — working in this repo
 
-TrueReplay is a TypeScript/npm wrapper around Stagehand that records what a browser agent did and computes an independent `landed / did-not-land / inconclusive` verdict per write by reading the live page. Read [SPEC.md](SPEC.md) (product), [docs/DAY2.md](docs/DAY2.md) (built: session detection, verified Stagehand facts) and [docs/DAY3.md](docs/DAY3.md) (next: auto postcondition — spec only, not built) before changing anything.
+TrueReplay is a TypeScript/npm wrapper around Stagehand that records what a browser agent did and computes an independent `landed / did-not-land / inconclusive` verdict per write by reading the live page. Read [SPEC.md](SPEC.md) (product), [docs/DAY2.md](docs/DAY2.md) (built: session detection, verified Stagehand facts), [docs/DAY3.md](docs/DAY3.md) (built: auto postcondition) and [docs/DAY4.md](docs/DAY4.md) (next: declared postconditions + nine Day 3 revisions — spec only, not built) before changing anything.
+
+Day 4 rules (see DAY4.md §0):
+- Declarations are **data** (`Declaration` tagged union), never callbacks. A callback can read `ActResult`; that is the agent's claim inside a verdict.
+- `act` options are parsed by Stagehand with `z.strictObject` and **throw on unknown keys** — strip `expect`/`waitMs` before delegating.
+- A met declaration lifts only `no-change` / `changed-unclassified` / `hash-only-nav` / heuristic `landed`. It never overrides `validation-error`, a corroborated `no-change`, or the destination gate. `absent` declarations only tighten. Reject vacuous declarations at call time.
+- `locator(sel).count()` is the only Locator read that does not throw on zero matches; gate `isVisible()`/`innerText()` behind it. `waitForSelector` **rejects** on timeout.
+- Bare `no-change` is `inconclusive`; with a session obstruction it is `did-not-land`.
+
+CI: install a Chrome that `localBrowser.launch` can find (`browser-actions/setup-chrome` or `npx playwright install chrome`); root containers need `--no-sandbox` via `launch({ args })`; `headless: true` always; every test passes `screenshots: false`; no wall-clock assertions, only budget-relative ones; integration fixtures go on the `serve()` HTTP server (a `locator` action costs ~1 s on a `data:` page vs ~9 ms over HTTP); Node ≥ 20.6.
 
 `act` reports selectors as `xpath=/html[1]/…`; `page.locator()` accepts that verbatim, bare xpath, and CSS. `page.snapshot().formattedTree` includes input values (passwords masked) and is the change unit for Day 3 — strip the `[n-m]` node-id prefix before diffing.
 

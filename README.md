@@ -4,7 +4,7 @@ Replay what your browser agent actually did — and get an independent verdict o
 
 The gap between "agent said done" and "page says done" is the product.
 
-> **Status: Day 1 of a 7-day MVP, being redone.** The first wrapper targeted `page.act`, which does not exist on Stagehand 4.x. The corrected shape (wrap the `Stagehand` instance) is specified in [docs/DAY2.md](docs/DAY2.md); verdicts stay stubbed (`inconclusive`) until the checks land — see [SPEC.md](SPEC.md).
+> **Status: Days 1–3 of a 7-day MVP built; Day 4 specified.** Session-state detection ([docs/DAY2.md](docs/DAY2.md)) and the auto-inferred postcondition ([docs/DAY3.md](docs/DAY3.md)) ship with 51 hermetic tests. Declared postconditions and nine Day 3 revisions are specified in [docs/DAY4.md](docs/DAY4.md). Roadmap in [SPEC.md](SPEC.md).
 
 ## Benchmark
 

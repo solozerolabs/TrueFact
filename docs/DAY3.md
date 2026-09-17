@@ -1,5 +1,7 @@
 # Day 3 — Postcondition: the auto-inferred default
 
+> Built (`src/postcondition.ts`, 27 tests). Nine revisions found by the Day 4 review are specified in [DAY4.md §1](DAY4.md) — most importantly, bare `no-change` becomes `inconclusive` unless corroborated (revising D5 below), and a mixed fill + click no longer short-circuits on the field check.
+
 Spec only (2026-09-16). Nothing for Day 3 is built; this replaces the one-line Day 3 bullet in SPEC.md and is written against the Day 1/2 code that exists in `src/`.
 
 The question Day 3 answers, per write step, with **zero declaration**: *did the write land?* Day 2 can only say "the page was obstructed" or "I don't know". Day 3 is what lets a clean write say **`landed`** — until it ships, every successful write in a replay is `inconclusive` and the wrapper is only useful for catching obstructions.
