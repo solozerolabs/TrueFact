@@ -192,7 +192,7 @@ One static HTML file that loads a JSONL. Left: intent, verdict, assertion result
 
 M0 gates M2/M5/M7. If M0 fails, M2 becomes "richer Stagehand-side capture" (tree, forms, storage, screenshots; no network) and the value line shifts to §5.1 + §7 + §8, which don't need it.
 
-Benchmark re-run after M2 is the proof: the 520-run table with the optimistic-UI row moved from `landed 40/40 (missed)` to `did-not-land`. **Status:** the mechanism is proven at fixture level (`test/sidecar-network.test.ts` — an optimistic ✅ over a same-origin 500 → `did-not-land`, a clean 200 and a third-party 500 both left alone). The full 520-run re-run is a separate step: `scripts/bench/run.mjs` must launch Chrome with `{ port }` and pass `network: { port }`, then it needs the API keys. Until then the fixture is the evidence.
+Proof is at the mechanism level, by a targeted hermetic fixture — not a benchmark re-run. `test/sidecar-network.test.ts` pins the exact trap: an optimistic ✅ over a same-origin 500 → `did-not-land`, while a clean 200 and a third-party 500 are both left alone (the cry-wolf guard). The 520-run ladder established the instrument once (cry-wolf 0/279, optimistic-UI the only miss) and is not re-run; every later change is proven this way. See `[[prove-with-tiny-runs]]`.
 
 ## 11. Open questions (settle with users, not analysis)
 
