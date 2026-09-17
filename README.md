@@ -4,6 +4,8 @@ Replay what your browser agent actually did — and get an independent verdict o
 
 The gap between "agent said done" and "page says done" is the product.
 
+> **Proven on a real agent:** a local model driving Stagehand clicked "Place order" onto a cookie overlay, Stagehand reported `success: true`, the order was never placed, and TrueReplay independently said `did-not-land`. See [docs/FINDINGS.md](docs/FINDINGS.md) and [docs/PROBES.md](docs/PROBES.md).
+
 > **Status: Days 1–4 of a 7-day MVP built.** Session-state detection ([docs/DAY2.md](docs/DAY2.md)), the auto-inferred postcondition ([docs/DAY3.md](docs/DAY3.md)) and declared postconditions ([docs/DAY4.md](docs/DAY4.md)) ship with 92 hermetic tests (~12 s, real Chrome, no LLM). Roadmap in [SPEC.md](SPEC.md).
 
 ## Benchmark

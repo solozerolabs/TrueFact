@@ -59,6 +59,10 @@ Browser-use adapter · Playwright-MCP adapter · dashboard · screenshot judge �
 
 > TrueReplay says whether it landed. It never says whether it should have.
 
+## Findings
+
+Verified Stagehand-4.1 behavior, measured numbers, the false-success demonstration on real agents, and the design conclusions that survived review are consolidated in [docs/FINDINGS.md](docs/FINDINGS.md). Probe runs: [docs/PROBES.md](docs/PROBES.md).
+
 ## Open questions carried forward
 
 - **Wrapper vs agent-called tool.** Wrapper for the MVP — it can't be skipped, and the benchmark number has to be true.
