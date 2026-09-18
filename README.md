@@ -87,6 +87,14 @@ import { withReplay } from "truereplay";
 const tr = withReplay(stagehand, { network: { port } }); // port = your Chrome's --remote-debugging-port
 ```
 
+## What gets stored
+
+The record holds verdicts, the a11y-tree diff, form field values, URLs and the agent's claim — never cookies, request headers or response bodies (they aren't captured at all). Password values are masked at capture; API keys, tokens and emails are scrubbed from every stored string before a step is written or hashed. For PII that isn't secret-shaped — a name, an SSN — name the fields and their values are length-masked:
+
+```ts
+const tr = withReplay(stagehand, { redactFields: ["ssn", /card/] }); // values gone, keys kept
+```
+
 ## Does it cry wolf?
 
 A verifier that halts a good run is worse than useless. Across a 520-write benchmark spanning four models weak to strong, TrueReplay raised **zero false halts (0/279)** — its verdict reads the page, so it's the same whoever drives. The one thing a page read alone can't catch is a page that lies (optimistic UI); the network sidecar and `probe` are the out-of-band answers to exactly that. Full method and numbers: [docs/BUSINESS.md](docs/BUSINESS.md), [bench/out/report.md](bench/out/report.md).

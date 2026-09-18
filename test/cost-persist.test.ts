@@ -52,4 +52,26 @@ describe("withReplay: cost + jsonl", () => {
     const persisted = lines.find((s) => s.kind === "write")!;
     assert.deepEqual(persisted, write);
   });
+
+  it("redacts secret-shaped form values always, and length-masks declared fields (redactFields)", async () => {
+    const fx2 = await serve({
+      "/form": `<html><body><main>
+        <input id="e" name="email"><input id="s" name="ssn">
+        <button id="go" type="button">go</button></main></body></html>`,
+    });
+    const sh = fakeStagehand(await b.start(), await b.page(), {
+      actions: [
+        { selector: "#e", method: "fill", args: ["leak@corp.com"] },
+        { selector: "#s", method: "fill", args: ["123-45-6789"] },
+      ],
+    });
+    const { act, page, replay } = withReplay(sh, { screenshots: false, redactFields: ["ssn"] });
+    await page.goto(fx2.base + "/form");
+    await act("fill the form");
+
+    const forms = replay.steps.find((s) => s.kind === "write")!.evidence.postcondition!.formsAfter;
+    assert.equal(forms.email.value, "[REDACTED:email]"); // secret-shaped -> always scrubbed
+    assert.equal(forms.ssn.value, "<redacted:11>"); // declared -> length-masked, value gone
+    await fx2.close();
+  });
 });

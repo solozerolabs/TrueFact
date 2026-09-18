@@ -201,10 +201,10 @@ describe("withReplay: postcondition end to end", () => {
 
   it("field fill that holds -> landed / field-match", async () => {
     await go("/fields");
-    const s = await runAct({ selector: "#e", method: "fill", args: ["a@b.co"] });
+    const s = await runAct({ selector: "#e", method: "fill", args: ["Ada Lovelace"] });
     assert.equal(s.verdict, "landed");
     assert.equal(s.evidence.postcondition?.reason, "field-match");
-    assert.equal(s.evidence.postcondition?.field?.actual, "a@b.co");
+    assert.equal(s.evidence.postcondition?.field?.actual, "Ada Lovelace");
   });
 
   it("field fill the page rewrites to empty -> did-not-land / field-mismatch", async () => {

@@ -19,6 +19,7 @@ import {
   readTree,
   redactLen,
   sessionVerdict,
+  type FormValue,
   type Postcondition,
   type Verdict,
 } from "./postcondition.js";
@@ -116,6 +117,11 @@ export interface ReplayOptions {
   // (page ✅) to did-not-land when its own backend returned a same-origin 5xx.
   // Off by default: the certified 0-false-halt page-read verdict is unchanged.
   network?: { port: number };
+  // Length-mask the stored values of these form fields (matched by name/id):
+  // strings match exactly, RegExps test the key. For PII that is not
+  // secret-shaped (a name, an address) and so slips past the always-on
+  // secret scrubber. `["ssn", /card/]`. Off by default.
+  redactFields?: (string | RegExp)[];
 }
 
 export type ActOptions = StagehandClientActOptions & {
@@ -214,8 +220,17 @@ async function groundExtract(active: PageReader, extractOpts: StagehandClientExt
   return g;
 }
 
-/** Redact secrets from a step's free-text fields, in place of trusting callers. */
-function redactStep(step: Step): Step {
+/**
+ * Redact secrets from a step before it is persisted, in place of trusting
+ * callers. Two nets: `redactText` scrubs secret-shaped runs (keys, tokens,
+ * emails) from *every* stored string — free text AND the evidence a page read
+ * leaves behind (form values, the targeted field, tree lines, URLs, titles),
+ * which the old version left in plaintext. `redactFields` additionally
+ * length-masks the values of named form fields (`"ssn"`, `/card/`), for PII
+ * that is not secret-shaped. We store no cookies, headers or response bodies,
+ * so there is nothing else to scrub. See docs/M7-PLAN.md Phase 1.5.
+ */
+function redactStep(step: Step, redactFields?: (string | RegExp)[]): Step {
   step.action = redactText(step.action);
   if (step.agent_claim) step.agent_claim = { ...step.agent_claim, message: redactText(step.agent_claim.message) };
   if (step.attempt)
@@ -224,6 +239,38 @@ function redactStep(step: Step): Step {
     );
   if (step.evidence.grounding)
     step.evidence.grounding.values = step.evidence.grounding.values.map((v) => ({ ...v, value: redactText(v.value) }));
+
+  const declared = (key: string): boolean =>
+    !!redactFields?.some((r) => (typeof r === "string" ? r === key : r.test(key)));
+
+  // Fingerprints: href (query strings) and title can carry a token or PII.
+  for (const fp of [step.evidence.before, step.evidence.after]) {
+    if (fp) {
+      fp.href = redactText(fp.href);
+      fp.title = redactText(fp.title);
+    }
+  }
+
+  const post = step.evidence.postcondition;
+  if (post) {
+    const scrubForms = (forms: Record<string, FormValue>): void => {
+      for (const k of Object.keys(forms)) {
+        // password values arrive already length-masked (postcondition.ts).
+        forms[k].value = declared(k) ? redactLen(forms[k].value) : redactText(forms[k].value);
+      }
+    };
+    scrubForms(post.formsBefore);
+    scrubForms(post.formsAfter);
+    if (post.field)
+      post.field = {
+        ...post.field,
+        expected: redactText(post.field.expected),
+        actual: post.field.actual == null ? null : redactText(post.field.actual),
+      };
+    post.treeAdded = post.treeAdded.map(redactText);
+    post.treeRemoved = post.treeRemoved.map(redactText);
+    if (post.network) post.network.errors = post.network.errors.map((e) => ({ ...e, url: redactText(e.url) }));
+  }
   return step;
 }
 
@@ -243,7 +290,7 @@ export function withReplay(source: Stagehand | Driver, opts: ReplayOptions = {})
   const sign = signingKey ? makeSigner(signingKey) : null;
   let prevHash = "";
   const record = (step: Step): void => {
-    const clean = redactStep(step);
+    const clean = redactStep(step, opts.redactFields);
     clean.prevHash = prevHash;
     clean.hash = hashStep(clean);
     if (sign) clean.sig = sign(clean.hash);
