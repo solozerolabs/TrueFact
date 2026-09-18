@@ -14,7 +14,6 @@ import type {
 import { detectSession, fingerprint, settle, type Fingerprint, type SessionEvidence } from "./session.js";
 import {
   applyNetwork,
-  applyNetworkLift,
   captureState,
   decideWrite,
   readTree,
@@ -496,17 +495,12 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
         post.reason = net.reason;
         post.confidence = net.confidence;
         verdict = net.verdict;
-      } else {
-        // No server error. If the page verdict is only uncertain (page changed
-        // but unnamed) and a write was accepted, the network lifts it to landed.
-        const lift = applyNetworkLift(verdict, post.reason, sc.landedSince(netMark, origins));
-        if (lift) {
-          post.verdict = lift.verdict;
-          post.reason = lift.reason;
-          post.confidence = lift.confidence;
-          verdict = lift.verdict;
-        }
       }
+      // NB: the network only ever DEMOTES. It deliberately does not lift an
+      // uncertain verdict on a clean 2xx: a same-origin 2xx (a first-party
+      // analytics beacon) proves that request succeeded, never that THIS action's
+      // write did — lifting on it reintroduces false-landed. Shrink inconclusive
+      // the sound way: declare a postcondition (probe/text). See docs/FINDINGS.
       if (errors.length) post.network = { errors };
     }
 

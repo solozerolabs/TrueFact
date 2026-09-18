@@ -72,14 +72,11 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
       if (req.url === "/retry-checkout") return res.writeHead(200, { "content-type": "text/html" }).end(
         `<!doctype html><meta charset=utf8><title>Checkout</title><h1>Checkout</h1><button id=place>Place order</button><p id=ok></p>
          <script>document.getElementById('place').onclick=async()=>{try{await fetch('/flaky',{method:'POST'})}catch(e){}try{await fetch('/flaky',{method:'POST'})}catch(e){}document.getElementById('ok').textContent='✅ Order placed';};</script>`);
-      // page CHANGES in an unclassified way (a new row, not a status/confirm) AND POSTs 200.
-      if (req.url === "/lift") return res.writeHead(200, { "content-type": "text/html" }).end(
+      // page changes in an UNCLASSIFIED way (a plain row, no confirmation) AND
+      // fires a clean same-origin 2xx (a first-party analytics beacon shape).
+      if (req.url === "/unclassified-write") return res.writeHead(200, { "content-type": "text/html" }).end(
         `<!doctype html><meta charset=utf8><title>x</title><ul id=l></ul><button id=place>Go</button>
          <script>document.getElementById('place').onclick=async()=>{document.getElementById('l').insertAdjacentHTML('beforeend','<li>added row</li>');await fetch('/ok',{method:'POST'});};</script>`);
-      // page does NOTHING on click but a same-origin write 2xx fires (the dead-click trap).
-      if (req.url === "/noop-post") return res.writeHead(200, { "content-type": "text/html" }).end(
-        `<!doctype html><meta charset=utf8><title>x</title><button id=place>Go</button>
-         <script>document.getElementById('place').onclick=async()=>{await fetch('/ok',{method:'POST'});};</script>`);
       return res.writeHead(404).end("no");
     });
     base = await listen(app);
@@ -92,7 +89,7 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     await shut(third);
   });
 
-  const run = async (route: "optimistic" | "declined-checkout" | "clean" | "thirdparty" | "gql" | "truncate-checkout" | "retry-checkout" | "lift" | "noop-post", apiOrigins?: string[], bodyErrors?: boolean) => {
+  const run = async (route: "optimistic" | "declined-checkout" | "clean" | "thirdparty" | "gql" | "truncate-checkout" | "retry-checkout", apiOrigins?: string[], bodyErrors?: boolean) => {
     const page = (await sh.browser.context.activePage())!;
     const fake = fakeStagehand(sh, page, { actions: [{ selector: "#place" }] });
     const w = withTrueFact(fake, { network: { port: PORT, apiOrigins, bodyErrors }, screenshots: false, waitMs: 600 });
@@ -179,17 +176,12 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     assert.equal(step.evidence.postcondition?.network, undefined);
   });
 
-  it("network-lift: an unclassified page change + a clean 2xx write lifts inconclusive -> landed", async () => {
-    // the page adds a plain row (changed-unclassified, not a confirmation) and
-    // POSTs /ok 200 — the accepted write lifts the uncertain page verdict.
-    const step = await run("lift");
-    assert.equal(step.verdict, "landed");
-    assert.equal(step.evidence.postcondition?.reason, "network-ok");
-  });
-
-  it("network-lift guard: a dead click (no page change) + a background 2xx stays inconclusive, never a false landed", async () => {
-    const step = await run("noop-post");
-    assert.equal(step.verdict, "inconclusive"); // no-change is NOT liftable
+  it("no false-landed: an unclassified page change + a clean same-origin 2xx stays inconclusive (the network never lifts)", async () => {
+    // The removed applyNetworkLift would have read the same-origin POST /ok 200 as
+    // "the write landed" — but a 2xx (a first-party analytics beacon) proves only
+    // that request succeeded, not that THIS action's write did. Must stay uncertain.
+    const step = await run("unclassified-write");
+    assert.equal(step.verdict, "inconclusive");
     assert.notEqual(step.evidence.postcondition?.reason, "network-ok");
   });
 
