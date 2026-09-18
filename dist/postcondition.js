@@ -95,8 +95,13 @@ export async function captureState(page) {
         pageId: page.id,
     };
 }
-const ERROR_RX = /required|invalid|error|failed|incorrect|try again|must be|not (valid|allowed)/i;
-const CONFIRM_RX = /thank|success|confirm|placed|saved|sent|submitted|complete|done|received|updated|created/i;
+const ERROR_RX = /required|invalid|error|failed|incorrect|try again|must be|not (valid|allowed)|declined|denied|unable|unsuccessful|rejected|out of stock|went wrong|couldn'?t|could not/i;
+// Word-boundary anchored so a confirm word inside a negative one does NOT match
+// ("unsuccessful" ⊅ success, "incomplete" ⊅ complete, "misplaced" ⊅ placed).
+const CONFIRM_RX = /\b(thank|success|confirmed?|placed|saved|sent|submitted|complete[d]?|done|received|updated|created)\b/i;
+// A confirm word negated on the same line is not a confirmation ("could not be
+// placed", "changes not saved", "failed to submit").
+const NEG_RX = /\b(no|not|never|cannot|can'?t|could ?n'?t|couldn'?t|did ?n'?t|un|fail(ed|ure)?|unable|without)\b/i;
 const isEmptyValue = (fv) => !fv || fv.value === "" || fv.value === "<redacted:0>";
 function urlDelta(a, b) {
     if (a === b)
@@ -141,11 +146,18 @@ export function classify(before, after, pageSwitched) {
     const out = (verdict, reason, confidence) => ({ verdict, reason, confidence });
     const hasRole = (role) => added.some((l) => new RegExp("^" + role + "\\b").test(l));
     const hasErrorText = added.some((l) => ERROR_RX.test(l));
-    const hasConfirmText = added.some((l) => CONFIRM_RX.test(l));
+    // A confirm line only counts if it isn't negated on the same line.
+    const hasConfirmText = added.some((l) => CONFIRM_RX.test(l) && !NEG_RX.test(l));
     if (pageSwitched)
         return out("landed", "new-page", "high");
-    if (urlChanged && !hashOnly)
-        return out("landed", "navigated", "high");
+    // Navigation is a strong landed signal — unless the destination URL itself
+    // announces the failure (`/checkout?error=declined`, `?status=failed`). Then
+    // we can't call it landed; inconclusive, and a declaration/probe can lift it.
+    if (urlChanged && !hashOnly) {
+        return /[?&#][^?#]*(error|fail|declin|denied|cancel|invalid)/i.test(after.fp.href)
+            ? out("inconclusive", "navigated", "heuristic")
+            : out("landed", "navigated", "high");
+    }
     // A corroborated error (an alert announcing an error) is a real rejection and
     // outranks everything below.
     if (hasRole("alert") && hasErrorText)
@@ -155,7 +167,10 @@ export function classify(before, after, pageSwitched) {
     // optional field also went invalid. Real rejections show no confirmation, so
     // validation-reject (empty required field, no ✅) still falls through to
     // did-not-land below.
-    const hasConfirm = hasRole("status") || hasRole("dialog") || hasConfirmText;
+    // A confirmation is a positive signal with NO error text: a `status`/`dialog`
+    // region or a confirm word, but not one announcing a failure ("status: Payment
+    // unsuccessful" is a role-confirm contradicted by its own text → not landed).
+    const hasConfirm = (hasRole("status") || hasRole("dialog") || hasConfirmText) && !hasErrorText;
     const activeInvalid = after.activeField ? after.forms[after.activeField]?.userInvalid : false;
     if (!hasConfirm && (after.userInvalidCount > before.userInvalidCount || activeInvalid)) {
         return out("did-not-land", "validation-error", "high");
@@ -164,9 +179,11 @@ export function classify(before, after, pageSwitched) {
         return out("inconclusive", "error-text", "heuristic");
     if (hasRole("dialog") && hasRole("button"))
         return out("inconclusive", "prompt", "high");
-    if (hasConfirm || hasRole("alert")) {
+    // A positive confirmation lands. A BARE alert with neither confirm nor error
+    // text ("Card declined", "Out of stock" — matched no CONFIRM word) is
+    // ambiguous, not a success: fall through to inconclusive rather than land it.
+    if (hasConfirm)
         return out("landed", "confirmation", "heuristic");
-    }
     const nonEmptyBefore = Object.keys(before.forms).filter((k) => !isEmptyValue(before.forms[k]));
     const formStillPresent = Object.keys(after.forms).length > 0;
     if (formStillPresent &&
@@ -282,16 +299,13 @@ export async function fieldPostcondition(page, action) {
     if (!res || !res.found)
         return null;
     const actual = res.value;
-    // Compare on alphanumerics only, so input masking (a phone that renders
-    // "(555) 123-4567", a trimmed/reformatted value) is not read as a mismatch.
-    // ponytail: alnum-normalized substring; if a field's punctuation is ever
-    // semantic (rare), compare raw for that type.
-    const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const match = SELECT_METHODS.has(action.method)
-        ? actual === expected
-        : expected === ""
-            ? actual === ""
-            : norm(actual).includes(norm(expected));
+    // Compare on letters+digits only, so input masking (a phone rendered
+    // "(555) 123-4567" from "5551234567") is not read as a mismatch. Unicode-aware
+    // (`\p{L}\p{N}`, not `[a-z0-9]`) so "東京"/"Ünal" don't normalize to "" and
+    // then spuriously match an EMPTY field. Equality, not substring: the agent
+    // typed X; the field must reflect X, not merely contain it ("ann" ⊄ "joanna").
+    const norm = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+    const match = SELECT_METHODS.has(action.method) ? actual === expected : norm(actual) === norm(expected);
     return {
         verdict: match ? "landed" : "did-not-land",
         reason: match ? "field-match" : "field-mismatch",

@@ -37,6 +37,17 @@ describe("classify (pure §4 rows, DAY4 R2)", () => {
     expect(classify(base, state({ tree: ["menu", "menuitem: Copy"] }), false), "inconclusive", "changed-unclassified", "heuristic"));
   it("row 11 (R2): nothing changed -> inconclusive / no-change / heuristic — absence is not a mechanism", () =>
     expect(classify(base, base, false), "inconclusive", "no-change", "heuristic"));
+  // --- false-landed guards (2026-09 soundness review) --------------------------
+  it("bare alert with no confirm/error text -> inconclusive, never landed", () =>
+    expect(classify(base, state({ tree: ["alert", "StaticText: Notice"] }), false), "inconclusive", "changed-unclassified", "heuristic"));
+  it("alert announcing a failure ('Card declined') -> did-not-land, not landed", () =>
+    expect(classify(base, state({ tree: ["alert", "StaticText: Card declined"] }), false), "did-not-land", "validation-error", "high"));
+  it("a status role whose text says it failed ('Payment unsuccessful') -> not landed", () =>
+    assert.notEqual(classify(base, state({ tree: ["status", "StaticText: Payment unsuccessful"] }), false).verdict, "landed"));
+  it("confirm word negated on the line ('Order could not be placed') -> not landed", () =>
+    assert.notEqual(classify(base, state({ tree: ["StaticText: Order could not be placed"] }), false).verdict, "landed"));
+  it("navigation to an error URL (?error=declined) -> inconclusive, not landed/navigated/high", () =>
+    expect(classify(base, state({ href: "http://x/checkout?error=declined" }), false), "inconclusive", "navigated", "heuristic"));
   it("ordering: navigation beats a stale validation flag", () =>
     assert.equal(classify(base, state({ href: "http://x/b", userInvalidCount: 1 }), false).reason, "navigated"));
   it("ordering: an alert-error beats confirmation text on the same page", () =>
@@ -101,6 +112,7 @@ describe("withTrueFact: postcondition end to end", () => {
       "/overlay": `<html><body><main><button id="s">Buy</button></main><div id="cookie" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.5)"></div></body></html>`,
       "/dead": `<html><body><main><button id="s">Buy</button></main></body></html>`,
       "/fields": `<html><body><main><input id="e" name="email"><input id="r" name="rw" oninput="this.value=''">
+        <input id="ac" name="ac" oninput="this.value='joanna'">
         <select id="plan" name="plan"><option value="free">Free</option><option value="pro">Pro</option></select><button id="s" type="button">noop</button></main></body></html>`,
       // a new-password form is the Day 2 FP-guard case: a password field that is NOT a login wall
       "/pw": `<html><body><main><form><input id="p" name="pw" type="password" autocomplete="new-password"></form></main></body></html>`,
@@ -210,6 +222,20 @@ describe("withTrueFact: postcondition end to end", () => {
   it("field fill the page rewrites to empty -> did-not-land / field-mismatch", async () => {
     await go("/fields");
     const s = await runAct({ selector: "#r", method: "fill", args: ["a@b.co"] });
+    assert.equal(s.verdict, "did-not-land");
+    assert.equal(s.evidence.postcondition?.reason, "field-mismatch");
+  });
+
+  it("non-ASCII fill the page rewrites to empty -> did-not-land, not a false '' == '' match", async () => {
+    await go("/fields");
+    const s = await runAct({ selector: "#r", method: "fill", args: ["東京"] });
+    assert.equal(s.verdict, "did-not-land");
+    assert.equal(s.evidence.postcondition?.reason, "field-mismatch");
+  });
+
+  it("fill 'ann' into a field the page rewrites to 'joanna' -> did-not-land (equality, not substring)", async () => {
+    await go("/fields");
+    const s = await runAct({ selector: "#ac", method: "fill", args: ["ann"] });
     assert.equal(s.verdict, "did-not-land");
     assert.equal(s.evidence.postcondition?.reason, "field-mismatch");
   });
