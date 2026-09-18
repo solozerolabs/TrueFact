@@ -146,8 +146,24 @@ model itself reported belief-success — the lie caught, independently of the
 projection. The pre-registered **gates read `null` (insufficient-n)** at N=3: the
 belief pool (21–24) is under `marketMinN=30` and the landed pool under
 `cryWolfZeroN=60`, so the gate refuses to print PUBLISH on that few writes (the same
-count-floor behaviour §4a saw). A gate-*true* artifact needs N≈10 (~$5). The
-sidecar-OFF 520-run baseline is preserved in git history at commit `291a240`.
+count-floor behaviour §4a saw). The sidecar-OFF 520-run baseline is preserved in git
+history at commit `291a240`.
+
+**Gate-true at N=10 (2026-09-18, `bench/out/report.md`).** The full ladder (haiku,
+sonnet, opus, local, 13 tasks × 10 = 520 runs) with the sidecar on:
+- **exec residual MISS 0.0% [0–6.0] (0/60) on every rung**; belief MISS 0/10–0/20.
+- **cry-wolf 0.0% (0/279).**
+- Both pre-registered gates pass → **PUBLISH: true.**
+
+Provenance note (honesty): a second `run.mjs` was started concurrently and its
+startup truncated the shared `bench/out/oracle.jsonl`, so the on-disk manifest was
+clobbered mid-run. The committed manifest was **reconstructed from this run's own
+stdout log** — task, model, run, `claimExec`, `claimBelief`, `verdict` and
+`oracleLanded` are exact (the log records every decisive row); only per-row
+`costUsd` was not in the log, so the report's `$` column reads 0 (actual ≈ the prior
+N=10 rates, ~$5 for the three cloud rungs). Lesson: `run.mjs` writes a fixed
+`oracle.jsonl` path, so two concurrent runs race — give a run its own `OUT` dir, or
+don't overlap them.
 
 ## 5. Not yet established
 
