@@ -12,7 +12,7 @@ Method: three parallel web-research passes (~40 searches, ~60 page fetches). Red
 
 **C wins, and it wins because it contains the only parts of A and B that have complaints behind them.**
 
-| | Pain is first-hand & recent | Pain is unmet | Someone pays | Fit with what TrueReplay does |
+| | Pain is first-hand & recent | Pain is unmet | Someone pays | Fit with what TrueFact does |
 |---|---|---|---|---|
 | A verdict | strongest (5 GitHub issues in last 2 weeks) | frameworks absorbing it (Stagehand PR #2901 same day, browser-use Judge) | none shown | exact |
 | B meter | real, recurring money disputes | vendors answer with their own meter; nobody asks for a neutral one | insurers: logs are a policy condition | weak: disputes are chat resolutions, not browser writes |
@@ -55,7 +55,7 @@ Insurers (the only clear pay signal):
 
 Receipts are already a category: 15+ products at $19–$599/mo, driven by EU AI Act Art. 12, not billing disputes. https://github.com/JaredKlopstein/provenant/issues/6
 
-Read: the disputes are real and cost money, but (1) they are about **chat resolutions**, where there is no page write for TrueReplay to read; (2) the winning fix so far was the vendor's own model, not a neutral party; (3) **zero complaints** mention out-of-band reconciliation (batch files, EDI acks) or portal drift. The moat pieces of B have no demand evidence at all. The receipt piece is commoditizing. The insurer channel is real but it wants a signed log, which already exists (chain.ts).
+Read: the disputes are real and cost money, but (1) they are about **chat resolutions**, where there is no page write for TrueFact to read; (2) the winning fix so far was the vendor's own model, not a neutral party; (3) **zero complaints** mention out-of-band reconciliation (batch files, EDI acks) or portal drift. The moat pieces of B have no demand evidence at all. The receipt piece is commoditizing. The insurer channel is real but it wants a signed log, which already exists (chain.ts).
 
 ## C — packet, three readers
 

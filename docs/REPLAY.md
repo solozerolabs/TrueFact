@@ -4,7 +4,7 @@
 
 ## One sentence
 
-A session replay — the actual video/DOM timeline of the browser run — with every moment stamped by TrueReplay's independent verdict, so a user can jump straight to the step where the agent said "done" and the page disagreed.
+A session replay — the actual video/DOM timeline of the browser run — with every moment stamped by TrueFact's independent verdict, so a user can jump straight to the step where the agent said "done" and the page disagreed.
 
 ## The rule it must not break
 
@@ -14,7 +14,7 @@ The replay is a **viewing layer built from verdicts already computed**. It never
 
 A raw session replay is table stakes. Playwright's trace viewer, Browserbase session replay, and browser-use all show one, and they look identical whether a checkout landed or silently failed. The video alone is the competitor's product: the agent's story told visually.
 
-The differentiator is the **index**, not the picture. "Seek to every `did-not-land` write" is a query only TrueReplay can answer, because only TrueReplay computes the verdict independently. Video indexed by verdict turns a linear recording into something searchable by outcome. That is the wow — and it is impossible without the verdict, which is the moat.
+The differentiator is the **index**, not the picture. "Seek to every `did-not-land` write" is a query only TrueFact can answer, because only TrueFact computes the verdict independently. Video indexed by verdict turns a linear recording into something searchable by outcome. That is the wow — and it is impossible without the verdict, which is the moat.
 
 The per-step screenshot in the MVP is a different artifact and stays: it is a **citation**, the single frame at the moment a verdict was decided, for auditing one failure. The replay is the continuous view. One does not replace the other; the screenshot is also the poster frame and the fallback when no video was recorded.
 
@@ -22,7 +22,7 @@ The per-step screenshot in the MVP is a different artifact and stays: it is a **
 
 ### Capture: delegate it, don't build it
 
-TrueReplay does not build a video pipeline. Stagehand runs on Playwright/CDP, where capture is a config line:
+TrueFact does not build a video pipeline. Stagehand runs on Playwright/CDP, where capture is a config line:
 
 - **Playwright video** — `recordVideo` on the browser context yields one `.webm` per run.
 - **Playwright trace** — `tracing.start({ screenshots: true, snapshots: true })` yields a `trace.zip`: a scrubbable DOM+screenshot+network timeline, openable in the existing trace viewer.
@@ -30,7 +30,7 @@ TrueReplay does not build a video pipeline. Stagehand runs on Playwright/CDP, wh
 
 `withReplay` gains an option to record the capture handle per run (a local path, or the Browserbase session id). It stores the handle; it does not process frames. Reinventing the trace viewer is the thing to not do.
 
-### Index: the part TrueReplay owns
+### Index: the part TrueFact owns
 
 Each `Step` already carries a `timestamp`. The run emits a sidecar index — one entry per step — joining the verdict to a position in the capture:
 

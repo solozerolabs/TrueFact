@@ -104,7 +104,7 @@ describe("signing (M9): ed25519 over the hash", () => {
   });
 
   it("CLI verify --pubkey reports 'intact and signed'", () => {
-    const dir = mkdtempSync(join(tmpdir(), "truereplay-sig-"));
+    const dir = mkdtempSync(join(tmpdir(), "truefact-sig-"));
     try {
       const run = join(dir, "run.jsonl");
       const key = join(dir, "pub.pem");
@@ -118,11 +118,11 @@ describe("signing (M9): ed25519 over the hash", () => {
   });
 });
 
-describe("truereplay verify CLI: over a jsonl on disk", () => {
+describe("truefact verify CLI: over a jsonl on disk", () => {
   let dir = "";
   let runPath = "";
   before(() => {
-    dir = mkdtempSync(join(tmpdir(), "truereplay-chain-"));
+    dir = mkdtempSync(join(tmpdir(), "truefact-chain-"));
     runPath = join(dir, "run.jsonl");
     const recs = chain([{ kind: "write", verdict: "landed", i: 0 }, { kind: "write", verdict: "did-not-land", i: 1 }]);
     writeFileSync(runPath, recs.map((r) => JSON.stringify(r)).join("\n") + "\n");

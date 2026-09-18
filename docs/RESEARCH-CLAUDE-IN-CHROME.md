@@ -1,10 +1,10 @@
-# Research build — TrueReplay vs a Claude-in-Chrome agent
+# Research build — TrueFact vs a Claude-in-Chrome agent
 
 > **Post-MVP research spec. Not built.** This measures a *different* integration
 > than the shipped product (a Stagehand wrapper): a Claude agent driving a real
-> browser with its own tools, with TrueReplay's verdict engine run out-of-band.
+> browser with its own tools, with TrueFact's verdict engine run out-of-band.
 > The output is a research result — "we pointed a frontier browser agent at N
-> traps and TrueReplay independently caught M silent failures" — not a
+> traps and TrueFact independently caught M silent failures" — not a
 > certification of `withReplay`.
 
 ## Why build it
@@ -57,7 +57,7 @@ through `javascript_tool`.
 Same three channels as the shipped benchmark, kept strictly separate:
 - **agent_claim** — the Claude driver's own yes/no on "did it work?", asked from
   the page it ends on (the belief channel).
-- **verdict** — TrueReplay's `landed / did-not-land / inconclusive`, computed by
+- **verdict** — TrueFact's `landed / did-not-land / inconclusive`, computed by
   reading the page out-of-band. The driver never sees it.
 - **oracle** — `truth(task)` from the fixture server, the incorruptible POST log.
 
@@ -124,7 +124,7 @@ extension: isolated, no user logins in scope, reset between runs.
 
 Reuse the scorer as-is. Question, fixed before the run: *on the same trap suite,
 how many writes does a frontier Claude browser agent get wrong (exec
-false-success), and of those how many does TrueReplay independently catch
+false-success), and of those how many does TrueFact independently catch
 (1 − residual MISS)?* Headline = the caught fraction on a strong driver. The
 `cry-wolf` (false-halt) metric applies unchanged and must stay low, or the verdict
 engine is not portable to this driver.

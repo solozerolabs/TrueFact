@@ -157,13 +157,13 @@ export function playwrightDriver(page: PwPage): Driver {
     }
   };
   const unsupported = (verb: string) => (): never => {
-    throw new Error(`TrueReplay: the Playwright driver has no ${verb}() — use tr.page for reads`);
+    throw new Error(`TrueFact: the Playwright driver has no ${verb}() — use tr.page for reads`);
   };
   return {
     act: async (instruction) => {
       if (typeof instruction === "string" || !instruction || !("selector" in (instruction as object))) {
         throw new Error(
-          "TrueReplay: the Playwright driver's act() needs an action object, e.g. " +
+          "TrueFact: the Playwright driver's act() needs an action object, e.g. " +
             `{ selector: "#go", method: "click" } or { selector: "#e", method: "fill", arguments: ["x"] }`,
         );
       }

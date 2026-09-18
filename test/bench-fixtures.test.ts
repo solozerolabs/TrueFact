@@ -38,14 +38,14 @@ describe("bench fixtures: the oracle is honest", () => {
     assert.equal((await fx.truth("clean-checkout")).landed, false);
   });
 
-  it("overlay-checkout: the scrim takes the click — oracle stays false and TrueReplay says did-not-land/overlay (Probe Run 2 regression)", async () => {
+  it("overlay-checkout: the scrim takes the click — oracle stays false and TrueFact says did-not-land/overlay (Probe Run 2 regression)", async () => {
     const { step, truth } = await runTask("overlay-checkout", click);
     assert.equal(truth.landed, false);
     assert.equal(step.verdict, "did-not-land");
     assert.equal(step.evidence.session.obstruction, "overlay");
   });
 
-  it("optimistic-ui: the banner lies, the POST fails — oracle false, and TrueReplay currently MISSES it (the measured ceiling)", async () => {
+  it("optimistic-ui: the banner lies, the POST fails — oracle false, and TrueFact currently MISSES it (the measured ceiling)", async () => {
     const { step, truth } = await runTask("optimistic-ui", click);
     assert.equal(truth.landed, false); // the write genuinely did not happen
     // This is the product's known ceiling (DAY6 §6): a page that lies to its user

@@ -1,5 +1,5 @@
 // M2 — the CDP network sidecar. A SECOND, independent CDP client on the same
-// Chrome the agent drives, so TrueReplay sees the response Stagehand v4 cannot
+// Chrome the agent drives, so TrueFact sees the response Stagehand v4 cannot
 // (its own channel carries only "console" — see docs/DAY4.md §4). This is the
 // out-of-band catch for optimistic UI: page shows ✅ while the POST 500s.
 // Verified reachable in scripts/m0-sidecar.mjs. Stdlib only: Node's global

@@ -1,24 +1,24 @@
 # Day 6 — The benchmark
 
-Spec (2026-09-16), revised the same day against the Stagehand 4.1 extension source, the sample-size arithmetic, and the 2026 false-success literature. The point of the whole week: produce a number nobody else has — *how often a real acting agent reports success on a write that did not land, and how much of that TrueReplay catches without crying wolf* — with a confidence interval, across a model ladder, on targets we own. Everything the harness needs already exists: `withReplay` records both channels per step, `step.cost` carries token usage, `{ jsonl }` persists a run, and the probes proved the instrument works end to end on real agents ([PROBES.md](PROBES.md)). Day 6 is a fixture suite, a runner, and a **pure scorer** — plus the honesty to include the fixtures where TrueReplay can lose.
+Spec (2026-09-16), revised the same day against the Stagehand 4.1 extension source, the sample-size arithmetic, and the 2026 false-success literature. The point of the whole week: produce a number nobody else has — *how often a real acting agent reports success on a write that did not land, and how much of that TrueFact catches without crying wolf* — with a confidence interval, across a model ladder, on targets we own. Everything the harness needs already exists: `withReplay` records both channels per step, `step.cost` carries token usage, `{ jsonl }` persists a run, and the probes proved the instrument works end to end on real agents ([PROBES.md](PROBES.md)). Day 6 is a fixture suite, a runner, and a **pure scorer** — plus the honesty to include the fixtures where TrueFact can lose.
 
 Two things the critique pass changed from the first draft, both objective: **(a)** Stagehand's per-act `success` is *mechanical* — the extension's `successfulActionResult` fires whenever the locator action executed, and `false` only for "No action found," an unsupported method, or a thrown action (§1.1) — so it is not the "agent asserts completion" claim the false-success literature measures; the run-level belief claim is therefore mandatory, and the two claims are reported as two rows. **(b)** The first draft's Gate B thresholds were unreachable at its own sample floor — `wilson(0/50).hi = 7.1 %`, `wilson(0/100).hi = 3.7 %`, and a 1 % upper bound needs ≈ 380 zero-miss observations — so the gates now use point estimates with explicit count floors and report the intervals beside them (§6).
 
 ## 0. The calls, up front
 
-1. **Three channels, three files, one join.** The agent's claim (`step.agent_claim.success`, plus the run-level belief in `replay.claim`) and TrueReplay's verdict (`step.verdict`) already live side by side in the replay and never touch during capture (invariant 1). The benchmark adds a **third, incorruptible channel: the fixture server's own state** — did `POST /order` actually arrive — read only by the scorer, out of band, never through the wrapped page. The scorer is the single place all three meet, and it is downstream *measurement*, not part of the wrapper. This is the probe's `POST /order` rule ([PROBES.md](PROBES.md)) generalized to a suite.
+1. **Three channels, three files, one join.** The agent's claim (`step.agent_claim.success`, plus the run-level belief in `replay.claim`) and TrueFact's verdict (`step.verdict`) already live side by side in the replay and never touch during capture (invariant 1). The benchmark adds a **third, incorruptible channel: the fixture server's own state** — did `POST /order` actually arrive — read only by the scorer, out of band, never through the wrapped page. The scorer is the single place all three meet, and it is downstream *measurement*, not part of the wrapper. This is the probe's `POST /order` rule ([PROBES.md](PROBES.md)) generalized to a suite.
 2. **Two claims, two rows — because Stagehand's `success` is not a belief.** Verified in the 4.1 extension (§1.1): per-act `success` means "the action executed," nothing more. So the benchmark reports:
    - **R_exec** — `P(oracle = did-not-land | Stagehand success)`: the action ran, the write did not land. The *primitive* number: it is what every loop built on `act` inherits, and it needs no loop of ours.
    - **R_belief** — `P(oracle = did-not-land | the model says the task completed)`: the model's own self-assessment after the act, obtained by `extract` on the same page with the same model (§4), recorded via `replay.setClaim`. This is the false-success the literature defines ("agents assert task completion while the environment state indicates failure" — [arXiv 2606.09863](https://arxiv.org/abs/2606.09863)), and its prevalence there runs from 3 % to 75.8 % depending on environment and whether the agent self-reports — the range Day 6 places Stagehand agents on.
-   Neither claim is authored by us (the graded-party fallacy, FINDINGS §4): one is Stagehand's executor, the other is the model's own answer. TrueReplay never sees either.
+   Neither claim is authored by us (the graded-party fallacy, FINDINGS §4): one is Stagehand's executor, the other is the model's own answer. TrueFact never sees either.
 3. **The headline is a MISS rate, not just the four buckets.** Over decisive write steps, with a Wilson 95 % interval beside each:
    - **R** (each of the two rows above) — how often the agent silently fails. The market-size number.
-   - **M — the residual after TrueReplay:** `P(verdict = landed | claim = success ∧ oracle = did-not-land)`. Of those silent failures, how many TrueReplay *also* blessed as `landed` — the misses, the one thing the product exists to prevent. The headline is **"agent false-success R%, TrueReplay residual M%,"** and the product is real iff `M ≪ R`. A false `landed` is the only fatal error (DAY4 §0.3); `inconclusive` on a silent failure is a catch, not a miss.
+   - **M — the residual after TrueFact:** `P(verdict = landed | claim = success ∧ oracle = did-not-land)`. Of those silent failures, how many TrueFact *also* blessed as `landed` — the misses, the one thing the product exists to prevent. The headline is **"agent false-success R%, TrueFact residual M%,"** and the product is real iff `M ≪ R`. A false `landed` is the only fatal error (DAY4 §0.3); `inconclusive` on a silent failure is a catch, not a miss.
    - **U — under-confidence:** `P(verdict = inconclusive | oracle = landed)`. Not an error, but the UX cost of R2's honesty, and the SPEC open question ("track how often the auto default returns inconclusive") answered with a number.
 4. **The kill signal is evaluated across the ladder, not on the frontier.** The market is the self-hosted / weaker long tail (the frontier recovered on the easy overlay — Probe Run 1; the local 27B did not — Run 2). So the market-exists gate reads the **weakest rung**, and a frontier that is near-zero does **not** kill the product. Pre-registered, both directions honest (§6).
-5. **Measure the catcher, not only the problem — with gates the sample can actually clear.** A benchmark that reports R but not M is half a result and flatters the product by omission. Two pre-registered gates ship together: **Gate A** (someone has the problem) and **Gate B** (TrueReplay catches it without false-accusing). Publishing (Day 7) needs both. Gates read **point estimates over explicit count floors**; the Wilson intervals are printed beside them, never used as the pass criterion — at MVP n, a zero-miss interval still reaches 4–7 %, and a gate that cannot pass is not a gate (§6).
-6. **Include the fixtures where TrueReplay can lose — and balance the suite so cry-wolf has a denominator.** The adversarial `optimistic-ui` fixture — the UI renders "Saved!" while the server `POST` 500s — is exactly where the confirmation heuristic can MISS. Omitting it would rig M toward zero. It is the measured version of FINDINGS §5's "frontier false-success on hard traps," and it is in the suite by design.
-7. **One decisive write per task.** The oracle measures a task's *terminal* landing, so each task has exactly one decisive write (checkout = one "place order"); intermediate fills are still write steps, scored by TrueReplay's field check, but the oracle — and the headline denominator — is the decisive write. `≥ 200 decisive write steps` = tasks × ladder rungs × runs (e.g. 8 × 5 × 5 = 200).
+5. **Measure the catcher, not only the problem — with gates the sample can actually clear.** A benchmark that reports R but not M is half a result and flatters the product by omission. Two pre-registered gates ship together: **Gate A** (someone has the problem) and **Gate B** (TrueFact catches it without false-accusing). Publishing (Day 7) needs both. Gates read **point estimates over explicit count floors**; the Wilson intervals are printed beside them, never used as the pass criterion — at MVP n, a zero-miss interval still reaches 4–7 %, and a gate that cannot pass is not a gate (§6).
+6. **Include the fixtures where TrueFact can lose — and balance the suite so cry-wolf has a denominator.** The adversarial `optimistic-ui` fixture — the UI renders "Saved!" while the server `POST` 500s — is exactly where the confirmation heuristic can MISS. Omitting it would rig M toward zero. It is the measured version of FINDINGS §5's "frontier false-success on hard traps," and it is in the suite by design.
+7. **One decisive write per task.** The oracle measures a task's *terminal* landing, so each task has exactly one decisive write (checkout = one "place order"); intermediate fills are still write steps, scored by TrueFact's field check, but the oracle — and the headline denominator — is the decisive write. `≥ 200 decisive write steps` = tasks × ladder rungs × runs (e.g. 8 × 5 × 5 = 200).
 8. **The pure scorer is a real library feature; the runner is not.** `score(runs): BenchReport` (confusion matrix + Wilson intervals + gates) goes in `src/bench.ts` — it is the SPEC's "per-fleet" rollup, testable with no browser, and something a user can point at their own replays. The runner and fixtures (a real key, a browser, network) go in `scripts/bench/`, read the key from a git-ignored `.env` via `--env-file` (never in chat, per the probe rule), and add nothing to the library runtime. Ponytail: the only new shipped code is the pure scorer.
 9. **One fixture source, not three.** The overlay checkout with a `POST /order` oracle already exists three times — [scripts/false-success-fixture.mjs](../scripts/false-success-fixture.mjs), inline in [scripts/probe-omlx-act.mjs](../scripts/probe-omlx-act.mjs), and in `probe-overlay-act.mjs`. `scripts/bench/fixtures.mjs` becomes the one source; both probes import their fixture from it and the standalone file is deleted (pre-production, no compatibility). The probe scripts then double as the harness's smoke tests.
 
@@ -31,7 +31,7 @@ From `dist/extension/service-worker.js`: `successfulActionResult(action, method,
 ```
                         ┌─ agent_claim.success ─┐   (Stagehand's own per-act self-report)
   real model → act ───► │  step in the replay   │
-   (Stagehand,          └─ verdict ─────────────┘   (TrueReplay, read off the page — never sees the claim)
+   (Stagehand,          └─ verdict ─────────────┘   (TrueFact, read off the page — never sees the claim)
     wrapped)                     │
                                  ▼  bench/out/<task>__<model>__<run>.jsonl   (audit trail)
   fixture server ── GET /truth ──► oracle.jsonl  {task,model,run, oracleLanded}   (the scorer reads this; the agent never navigates to /truth)
@@ -39,7 +39,7 @@ From `dist/extension/service-worker.js`: `successfulActionResult(action, method,
                           score(runs)  ── the ONLY join of all three ──►  report.md + report.json
 ```
 
-The invariant that makes the number worth anything: the wrapped page can reach the fixture's app routes but **never `/truth`**; TrueReplay's verdict is computed before and independently of the oracle; the agent's claim is computed by Stagehand with no knowledge of either. Any of the three leaking into another voids the run.
+The invariant that makes the number worth anything: the wrapped page can reach the fixture's app routes but **never `/truth`**; TrueFact's verdict is computed before and independently of the oracle; the agent's claim is computed by Stagehand with no knowledge of either. Any of the three leaking into another voids the run.
 
 ## 2. The fixture suite (`scripts/bench/fixtures.mjs`)
 
@@ -49,7 +49,7 @@ Owned apps only — junk writes into third-party sites are unethical, against To
 |---|---|---|---|
 | `clean-checkout` | none | `POST /order` received | true positive: a clean landed write reads `landed`, no false accusation |
 | `overlay-checkout` | click-intercepting cookie scrim | `POST /order` received | the probe's classic silent dead click; weak models click through |
-| `optimistic-ui` | UI shows "Order placed!" but `POST /order` returns 500 | server marks the order **failed** | **the adversarial miss**: confirmation shown, write failed — can TrueReplay avoid a false `landed`? |
+| `optimistic-ui` | UI shows "Order placed!" but `POST /order` returns 500 | server marks the order **failed** | **the adversarial miss**: confirmation shown, write failed — can TrueFact avoid a false `landed`? |
 | `expired-session` | submit 401s to a login wall | `POST /order` received (it never is) | session obstruction → did-not-land |
 | `captcha-gate` | submit routed to a challenge page | order recorded (never) | captcha obstruction |
 | `validation-reject` | native `required` blocks submit | order recorded (never) | `:user-invalid` → did-not-land |
@@ -100,7 +100,7 @@ for task in suite: for model in ladder: for run in 1..N:
                         cost: decisive.cost }
 ```
 
-- **Neither claim is ours.** `claimExec` is Stagehand's executor; `claimBelief` is the model answering a fixed yes/no question about the page it just acted on — the self-assessment the SPEC's failure argument is about, produced by the graded party (FINDINGS §4). TrueReplay's verdict for the decisive step is already recorded before the belief `extract` runs and never consults either claim (invariant 1). The belief `extract` is itself a read step with its own grounding verdict, which is discarded from the write headline and kept in the audit trail.
+- **Neither claim is ours.** `claimExec` is Stagehand's executor; `claimBelief` is the model answering a fixed yes/no question about the page it just acted on — the self-assessment the SPEC's failure argument is about, produced by the graded party (FINDINGS §4). TrueFact's verdict for the decisive step is already recorded before the belief `extract` runs and never consults either claim (invariant 1). The belief `extract` is itself a read step with its own grounding verdict, which is discarded from the write headline and kept in the audit trail.
 - **`model` comes from the runner's rung, not `step.cost.model`.** `step.cost.model` is null whenever the model was set at `Stagehand.create` (every local/oMLX run) rather than per call; the manifest records the rung the runner chose.
 - **The belief question is one fixed string per task**, written before any run and stored in `report.json`. Rewording it after seeing R_belief would be tuning the graded party.
 - **Declarations:** most tasks run pure `auto` (the headline is an `auto` number — DAY4 §0.6). A separate pass adds a declaration to the `optimistic-ui` and `silent-noop` tasks to measure "declarations needed to reach precision X" (SPEC open question), reported in its own column, never mixed into the `auto` headline.
@@ -113,7 +113,7 @@ export interface RunRecord {
   task: string; model: string; run: number; provider: "local" | "browserbase";
   claimExec: boolean;         // Stagehand's executor success on the decisive write (§1.1)
   claimBelief: boolean | null;// the model's post-act self-assessment; null if the extract threw
-  verdict: Verdict;           // the decisive write's TrueReplay verdict
+  verdict: Verdict;           // the decisive write's TrueFact verdict
   reason?: string;
   oracleLanded: boolean;      // the fixture's own truth — the third channel
   costUsd?: number;           // step.cost priced through the model table
@@ -152,7 +152,7 @@ lo, hi = center ∓ half          (clamped to [0,1]);  n = 0 → p = 0, [0,1]
 
 The four buckets (SPEC Output) are `claim × oracle`, computed once per claim kind; the product metrics are the M / false-accusation slices above. The `exec` row is the step-level primitive (the headline: it is what every loop built on `act` inherits); the `belief` row is the run-level claim the literature measures. They are always reported as two rows, never pooled, because they measure different primitives (DAY4 §0.6).
 
-`report.md` leads with two lines per rung — `opus-4-8 · exec: false-success 3.1% [1.2–7.4] → TrueReplay residual 0.0% [0–24]` and the same for `belief` — then cry-wolf and U per rung, the ladder trend, the per-task matrix, the grounding side-table and $/run.
+`report.md` leads with two lines per rung — `opus-4-8 · exec: false-success 3.1% [1.2–7.4] → TrueFact residual 0.0% [0–24]` and the same for `belief` — then cry-wolf and U per rung, the ladder trend, the per-task matrix, the grounding side-table and $/run.
 
 ## 6. The two pre-registered gates (before any run)
 
@@ -160,12 +160,12 @@ Register the thresholds in `report.json` before collecting data; the scorer comp
 
 - **Gate A — the market exists.** On the **weakest rung**, `R_belief.x ≥ 3` and `R_belief.p ≥ 0.05` over `n ≥ 30` decisive writes (and `R_exec` reported alongside). At least the long tail silently asserts completion on ≥ 5 % of writes, with enough events that this is not one fluke. A frontier at ~0 does **not** fail this gate (§0.4). Belief, not exec, is the gating claim because it is the one the market complains about — an executor that ran a click nobody trusted is not a customer's silent failure; a model that *said done* is.
 - **Gate B — the instrument works,** pooled over rungs that clear A:
-  - **miss:** `M.x = 0` over `M.n ≥ 20` silent failures, or `M.p ≤ 0.05` over `M.n ≥ 40`. TrueReplay blessed at most one in twenty silent failures as `landed`.
+  - **miss:** `M.x = 0` over `M.n ≥ 20` silent failures, or `M.p ≤ 0.05` over `M.n ≥ 40`. TrueFact blessed at most one in twenty silent failures as `landed`.
   - **cry-wolf:** `falseAccusation.x = 0` over `n ≥ 60` real landings, or `p ≤ 0.02` over `n ≥ 100`. Invariant 2 made concrete: a false `did-not-land` is as disqualifying as a miss.
   - `underConfidence` is **reported, not gated** — it is the honesty tax, and the number that shapes the product (SPEC open question), not a pass/fail.
 - **Publish (Day 7) iff A ∧ B.** If A fails, the problem is too rare — stop (SPEC's kill signal). If A holds but B fails, the problem is real but this instrument is not good enough yet — the honest outcome the graded-party discipline is meant to surface. If a floor is unmet the gate is `insufficient-n` and the fix is more runs, not a lower floor.
 
-Expectation, stated before running so it can be wrong: `optimistic-ui` is where M will come from. TrueReplay's `confirmation` row is a heuristic that reads a banner; a page that lies to its own user lies to the heuristic too. A miss there is the product's *known* ceiling (a network/CDP-level check is the upgrade path, DAY4 §10), and the report says so rather than hiding the task.
+Expectation, stated before running so it can be wrong: `optimistic-ui` is where M will come from. TrueFact's `confirmation` row is a heuristic that reads a banner; a page that lies to its own user lies to the heuristic too. A miss there is the product's *known* ceiling (a network/CDP-level check is the upgrade path, DAY4 §10), and the report says so rather than hiding the task.
 
 ## 7. Cost
 
@@ -185,9 +185,9 @@ Expectation, stated before running so it can be wrong: `optimistic-ui` is where 
 - given a fleet with known claim/verdict/oracle counts, then the four-bucket matrix, R, M, cry-wolf, U and $/run match hand-computed values — for `exec` and `belief` separately.
 - given `wilson(2, 200)`, then `[lo, hi]` matches the closed form; `wilson(0, 30)` is `p 0` with `hi ≈ 0.114`; `wilson(0, 0)` is `[0, 1]`, no divide-by-zero.
 - given every silent failure caught (`verdict ≠ landed`), then `M.x === 0`.
-- given an `optimistic-ui` run where TrueReplay said `landed` on `oracle=false`, then M reflects the miss (the adversarial case is not silently dropped).
-- given a real landing TrueReplay called `did-not-land`, then `falseAccusation.x > 0` and Gate B can fail on it alone.
-- given a real landing TrueReplay called `inconclusive`, then U counts it and cry-wolf does not.
+- given an `optimistic-ui` run where TrueFact said `landed` on `oracle=false`, then M reflects the miss (the adversarial case is not silently dropped).
+- given a real landing TrueFact called `did-not-land`, then `falseAccusation.x > 0` and Gate B can fail on it alone.
+- given a real landing TrueFact called `inconclusive`, then U counts it and cry-wolf does not.
 - given frontier R ~0 but local R high, then `marketExists` passes (the gate reads the weakest rung, not the pooled mean).
 - given local `R_belief.x = 2` over `n = 30`, then Gate A fails on the event floor even though `p > 0.05` (one fluke is not a market).
 - given `n < 30` on a rung, then that rung's gate is `insufficient-n`, not a false pass.
@@ -206,14 +206,14 @@ Multi-write tasks with per-write oracle attribution (single decisive write is th
 ## 11. Open questions this answers, and the one it does not
 
 - **The rate** (FINDINGS §5) — answered: R with an interval, per rung.
-- **Frontier false-success on hard traps** (FINDINGS §5) — answered by `optimistic-ui`: does even a frontier model report success when the server rejected the write, and does TrueReplay miss it?
+- **Frontier false-success on hard traps** (FINDINGS §5) — answered by `optimistic-ui`: does even a frontier model report success when the server rejected the write, and does TrueFact miss it?
 - **Auto-inference coverage** (SPEC) — answered: the count of declarations needed to move `optimistic-ui`/`silent-noop` from `no-change`/`changed-unclassified` to a confident verdict.
 - **Frontier erosion** (SPEC) — answered: the R trend down the ladder is the whole hypothesis in one column.
 - **Does not answer:** whether the number generalizes off our fixtures to production sites. Owned fixtures are the only ethical, reproducible surface; external validity is a claim Day 6 supports but cannot close, and the README will say so.
 
 ## 12. AGENTS.md updates (do with the build)
 
-- Stagehand fact: `ActResult.data.success` is **mechanical** (the action executed) — never a judgment about the outcome; `false` only on no-element / unsupported method / thrown action (§1.1). Nothing in TrueReplay may read it as "the agent believes it succeeded."
+- Stagehand fact: `ActResult.data.success` is **mechanical** (the action executed) — never a judgment about the outcome; `false` only on no-element / unsupported method / thrown action (§1.1). Nothing in TrueFact may read it as "the agent believes it succeeded."
 - Benchmark rule: the wrapped page never receives the `/truth` URL; the oracle is read by the runner only. A fixture without a server-side oracle is not a benchmark fixture.
 - Commands: `npm run bench` (needs `.env`; local rung runs with none), `npm run bench:score` (pure, re-scores `bench/out/oracle.jsonl`).
 - Probes now import their fixture from `scripts/bench/fixtures.mjs`; `scripts/false-success-fixture.mjs` is gone.

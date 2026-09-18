@@ -1,4 +1,4 @@
-// TrueReplay — wrap a Stagehand (v4) instance by composition and record, per
+// TrueFact — wrap a Stagehand (v4) instance by composition and record, per
 // step, what the agent claimed vs. what the page shows. The two channels never
 // touch here: no verdict function receives agent_claim. See docs/DAY2–4.
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs";
@@ -106,11 +106,11 @@ export interface Replay {
 
 export interface ReplayOptions {
   screenshots?: boolean; // default true; captured on write steps, after the verdict is decided
-  screenshotDir?: string; // default ".truereplay/screenshots"
+  screenshotDir?: string; // default ".truefact/screenshots"
   waitMs?: number; // one budget for the auto no-change poll and declared checks (default 5000)
   jsonl?: string; // if set, append one redacted step per line as the run proceeds
-  // ed25519 private key (PEM). When set — here or via TRUEREPLAY_SIGNING_KEY —
-  // each step is signed over its hash, and `truereplay verify --pubkey` can
+  // ed25519 private key (PEM). When set — here or via TRUEFACT_SIGNING_KEY —
+  // each step is signed over its hash, and `truefact verify --pubkey` can
   // check the signature. Off by default; the hash chain alone still detects
   // tamper. See docs/SPEC-V2.md §8.
   signingKey?: string;
@@ -280,7 +280,7 @@ export function withReplay(source: Stagehand | Driver, opts: ReplayOptions = {})
   // Accept a Stagehand (wrap it) or a ready Driver (Phase 2 drivers pass one).
   const driver: Driver =
     "activePage" in source && "readerFor" in source ? (source as Driver) : stagehandDriver(source as Stagehand);
-  const screenshotDir = opts.screenshotDir ?? ".truereplay/screenshots";
+  const screenshotDir = opts.screenshotDir ?? ".truefact/screenshots";
   const defaultWait = opts.waitMs ?? 5000;
   if (opts.jsonl) mkdirSync(dirname(opts.jsonl), { recursive: true });
 
@@ -288,7 +288,7 @@ export function withReplay(source: Stagehand | Driver, opts: ReplayOptions = {})
   // line — so the stored record survives a crashed run and always matches
   // what's in memory. The hash is computed AFTER redaction, so a stored line
   // re-hashes to its own `hash` (verify reads exactly what was written).
-  const signingKey = opts.signingKey ?? process.env.TRUEREPLAY_SIGNING_KEY;
+  const signingKey = opts.signingKey ?? process.env.TRUEFACT_SIGNING_KEY;
   const sign = signingKey ? makeSigner(signingKey) : null;
   let prevHash = "";
   const record = (step: Step): void => {

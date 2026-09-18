@@ -1,6 +1,6 @@
 // Day 6 — the benchmark scorer. Pure: a function of the run manifest, no
 // browser, no LLM, no network. It is the single place the three channels meet
-// (agent claim, TrueReplay verdict, fixture-server oracle) and it is downstream
+// (agent claim, TrueFact verdict, fixture-server oracle) and it is downstream
 // measurement, never part of the wrapper. Two claim kinds are scored side by
 // side: `exec` (Stagehand's mechanical per-act success) and `belief` (the
 // model's own post-act self-assessment). See docs/DAY6.md.
@@ -13,7 +13,7 @@ export interface RunRecord {
   provider: "local" | "browserbase";
   claimExec: boolean; // Stagehand's executor success on the decisive write (§1.1)
   claimBelief: boolean | null; // the model's post-act self-assessment; null if the extract threw
-  verdict: Verdict; // the decisive write's TrueReplay verdict
+  verdict: Verdict; // the decisive write's TrueFact verdict
   reason?: string;
   oracleLanded: boolean; // the fixture's own truth — the third channel
   costUsd?: number;

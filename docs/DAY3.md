@@ -76,7 +76,7 @@ Channel rule, restated: `attempt` picks the selector and the expected value; the
 
 Inputs: `before`, `after` (§2), `urlChanged`, `hashOnlyChange` (only the `#…` fragment differs), `pageSwitched` (§5), `treeAdded`, `treeRemoved`, `formsBefore/After`. Evaluate top to bottom; first match wins. Each row names its **confidence** (mechanism-backed = high; regex/weak = heuristic) and the verdict it may produce.
 
-Two asymmetries, not one. A false `did-not-land` inflates the headline bucket, so only mechanism-backed rows may say `did-not-land`. But a false `landed` is TrueReplay **missing a silent failure — the one thing it exists to catch**, so a `landed` verdict is only `high` confidence when the signal is mechanism-backed (real navigation, new tab, form cleared); weak `landed` signals (regex confirmation, a bare `#` anchor) are `heuristic`, and a hash-only URL change with nothing else is `inconclusive`, not a false clear.
+Two asymmetries, not one. A false `did-not-land` inflates the headline bucket, so only mechanism-backed rows may say `did-not-land`. But a false `landed` is TrueFact **missing a silent failure — the one thing it exists to catch**, so a `landed` verdict is only `high` confidence when the signal is mechanism-backed (real navigation, new tab, form cleared); weak `landed` signals (regex confirmation, a bare `#` anchor) are `heuristic`, and a hash-only URL change with nothing else is `inconclusive`, not a false clear.
 
 | # | Signal | Confidence | Verdict | `reason` |
 |---|---|---|---|---|
@@ -213,7 +213,7 @@ Hermetic, `node:test`, one local Chrome + `Stagehand.create({ browser })` with *
 | D8 | password redaction in `attempt.arguments` and `forms` | adopted | replays are meant to be shared; trust-boundary rule from AGENTS.md |
 | D9 | screenshot "judge" | still out | capture per write step stays (Day 2); interpretation of pixels is not a Day 3 signal |
 | D10 | `no-change` concluded at the 1.5 s settle | **revised (eng-review)** | 1.5 s < a real server round-trip; a slow-confirming success would read `no-change` → false `did-not-land`. §4.1 adds an extended re-capture poll (default 8 s) that runs only on a first-look `no-change` |
-| D11 | any `href` change → `landed` (high) | **revised (eng-review)** | a bare `#` anchor "navigates" and lands nothing; counting it high-confidence `landed` is TrueReplay missing a silent failure. Split: path/origin/search → high `landed`; hash-only → `inconclusive` (row 7) |
+| D11 | any `href` change → `landed` (high) | **revised (eng-review)** | a bare `#` anchor "navigates" and lands nothing; counting it high-confidence `landed` is TrueFact missing a silent failure. Split: path/origin/search → high `landed`; hash-only → `inconclusive` (row 7) |
 | D12 | redaction vs. the field-match compare | **added (eng-review)** | redacting before comparing makes every password fill trivially `field-match`. Fixed order: compute on real values, then redact for storage (§7) |
 | D13 | new `src/postcondition.ts` module | added (eng-review) | `captureState` / `classifyChange` (pure) / `fieldPostcondition` / `redact`; keeps `run()` thin and `classifyChange` unit-testable |
 | D14 | test matrix | **expanded (eng-review)** | +reported-failure/actually-landed (the 4th benchmark bucket), +slow-confirm, +hash-only, +empty-fill |

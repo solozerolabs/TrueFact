@@ -7,14 +7,14 @@ and the design conclusions that survived review. Spec detail and decisions live 
 
 ## 1. The thesis holds — and it is catchable (the headline)
 
-A real acting agent reports success on a write that did not land, and TrueReplay
+A real acting agent reports success on a write that did not land, and TrueFact
 catches it by reading the page. Demonstrated on genuine agents, not asserted — full
 runs in [PROBES.md](PROBES.md).
 
 | Agent | Trap: submit under a click-intercepting cookie overlay | Claim | Truth (server `POST /order`) | Verdict |
 |---|---|---|---|---|
 | Frontier (blind subagent) | dismissed the banner, placed the order for real | success | placed | **true success** — recovered |
-| Local Qwen3.8-27B via Stagehand + TrueReplay | clicked straight through the overlay | `success: true` | **never placed** (only GETs) | **false success — TrueReplay said did-not-land** |
+| Local Qwen3.8-27B via Stagehand + TrueFact | clicked straight through the overlay | `success: true` | **never placed** (only GETs) | **false success — TrueFact said did-not-land** |
 
 The truth channel is the fixture server's own request log — the agent cannot fake a
 `POST` it never sent, so the agent's claim and the page-state truth are structurally
@@ -28,7 +28,7 @@ rate is Day 6 — but the instrument now works end to end on real act pipelines.
 
 ## 2. Stagehand 4.1 — verified behavior
 
-Everything TrueReplay is built on, established by reading `dist/index.d.mts` and the
+Everything TrueFact is built on, established by reading `dist/index.d.mts` and the
 extension bundle and by live probes against `@browserbasehq/stagehand@4.1.0`. Several
 of these contradict or are absent from the published docs.
 
@@ -43,7 +43,7 @@ of these contradict or are absent from the published docs.
 | `Locator.count()` is the **only** element read that does not throw on zero matches; `isVisible()`/`innerText()`/`inputValue()` **reject** on a missing element. `page.on` emits only `console`. No `frames()` / `setContent()` / `waitForURL()`. `page.url()` is async. | `index.d.mts` + probes; shapes the declared-check reads. |
 | A submit blocked by native `required`/`pattern` validation changes **nothing** in the a11y tree. `:invalid` matches before and after (useless); `:user-invalid` flips only after a submit attempt, and focus jumps to the field. | probe; the most common real form rejection, invisible without `:user-invalid`. |
 | Chrome **blocks script-initiated navigation to `data:` URLs**, and a new tab opened to a `data:` URL reports `url() === ""` indefinitely. | probe; every navigation/redirect/tab test must run over an `http://` fixture, which also runs ~100× faster (a `locator` action is ~1 s on `data:` vs ~9 ms over HTTP). |
-| `act` options are parsed with **`z.strictObject` and throw on unknown keys**; there is **no assertion/verify/postcondition primitive** anywhere in the SDK, and `observe()` cannot run without an LLM. | `index.mjs:1523` + grep; this is the gap TrueReplay fills, and why a declaration must be stripped from the options before delegating. |
+| `act` options are parsed with **`z.strictObject` and throw on unknown keys**; there is **no assertion/verify/postcondition primitive** anywhere in the SDK, and `observe()` cannot run without an LLM. | `index.mjs:1523` + grep; this is the gap TrueFact fills, and why a declaration must be stripped from the options before delegating. |
 | **No `baseUrl` in `ModelConfig`** — a local model must ride the `ClientLLM.generate` callback, a two-mode contract (text / `json_schema`). | `ModelConfigSchema`, `ClientLLMSchema` in `index.mjs`. |
 
 ## 3. Measured numbers

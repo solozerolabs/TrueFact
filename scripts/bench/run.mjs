@@ -1,5 +1,5 @@
 // Day 6 runner. For each task × ladder rung × run: reset the fixture, drive one
-// decisive write with a REAL model wrapped by TrueReplay, ask the SAME model to
+// decisive write with a REAL model wrapped by TrueFact, ask the SAME model to
 // self-assess (the belief claim), read the server oracle out of band, and append
 // a manifest row. Needs a key for the cloud rungs (git-ignored .env, via
 // --env-file); the local oMLX rung needs none. Nothing here authors a claim.

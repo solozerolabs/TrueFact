@@ -1,12 +1,12 @@
 {
-  "name": "truereplay",
+  "name": "truefact",
   "version": "0.0.1",
   "description": "Runtime wrapper for browser-agent write actions: reads the live page and returns an independent landed/did-not-land/inconclusive verdict, without trusting the agent.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "truereplay": "dist/cli.js"
+    "truefact": "dist/cli.js"
   },
   "files": [
     "dist",

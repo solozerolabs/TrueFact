@@ -21,7 +21,7 @@ export const TASKS = [
   // Hard clean set — genuine successes (lands:true) whose SHAPE tempts a false
   // halt. These bound cry-wolf (falseAccusation) where the easy clean fixtures
   // can't; each exercises a different did-not-land path on a write that landed.
-  // See docs/BUSINESS.md §4. TrueReplay's current verdict on each is pinned in
+  // See docs/BUSINESS.md §4. TrueFact's current verdict on each is pinned in
   // test/bench-fixtures.test.ts, so an improvement flips a test.
   { id: "masked-phone", lands: true, instruction: "enter 5551234567 in the phone number field", completionQuestion: "Was the phone number saved?" },
   { id: "blur-validate", lands: true, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed?" },
@@ -68,7 +68,7 @@ const PAGES = {
   "expired-session/login": () =>
     shell("Sign in", `<h1>Session expired</h1><p>Please sign in to continue.</p><form><input name="email" autocomplete="username"><input type="password" autocomplete="current-password"></form>`),
 
-  // The click navigates to a challenge page (a captcha iframe TrueReplay detects).
+  // The click navigates to a challenge page (a captcha iframe TrueFact detects).
   "captcha-gate": () =>
     shell("Checkout", `<h1>Checkout</h1><button id="place" type="button">Place order</button>`,
       `<script>document.getElementById('place').onclick=()=>location.href='/captcha-gate/challenge';</script>`),

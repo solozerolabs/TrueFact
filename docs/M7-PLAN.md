@@ -22,7 +22,7 @@ The spike showed a raw-CDP reader reproduces every classifier signal and is ~6x 
 
 ### Axis 3 — the product/UX question the devil's advocate raised (and it is right to). "Above all, best UX."
 
-TrueReplay's flagship framing — "your agent said done; it wasn't" — needs an **agent with a claim**. A hand-written Playwright script (`page.click('#submit')`) has no self-report to disbelieve, so the "independent channel" has nothing to be independent *from*. Therefore:
+TrueFact's flagship framing — "your agent said done; it wasn't" — needs an **agent with a claim**. A hand-written Playwright script (`page.click('#submit')`) has no self-report to disbelieve, so the "independent channel" has nothing to be independent *from*. Therefore:
 
 - **The core transfers fully; the framing does not.** The independent read-after-write verdict (did-not-land detection, optimistic-UI catch, obstruction detection) is valuable for *any* driver — an overlay-swallowed click or a silently-rejected form is a silent failure whether or not an LLM issued it. What needs an agent is only the *"the agent lied"* narrative.
 - **Target LLM-driven usage first, not hand-written scripts.** The second-driver ICP is *LLM agents that happen to drive via Playwright / Browser-Use / Playwright-MCP* — those carry an intent string and a claim, so the full product applies. Marketing the lie-detector to deterministic-script users is selling to the wrong persona (devil's sharpest point).

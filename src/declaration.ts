@@ -18,7 +18,7 @@ export type Declaration =
   | { kind: "element"; selector: string; absent?: boolean } // css | xpath= | text= (Stagehand's parser)
   | { kind: "text"; matches: string | RegExp; role?: string; absent?: boolean } // innerText, or a11y-tree lines under `role`
   | { kind: "field"; selector: string; equals: string | RegExp }
-  // Out-of-band reconciliation: TrueReplay GETs `get` itself (relative resolves
+  // Out-of-band reconciliation: TrueFact GETs `get` itself (relative resolves
   // against the page URL) and matches real server state — the only signal that
   // catches optimistic UI, which Stagehand v4 cannot observe on the wire. Data,
   // not a callback: no verdict path ever sees the agent's claim. See DAY4 §4.
@@ -37,7 +37,7 @@ const isVacuous = (m: string | RegExp): boolean => (typeof m === "string" ? m ==
 export function validateDeclarations(input: Declaration | Declaration[] | undefined): Declaration[] {
   const list = input === undefined ? [] : Array.isArray(input) ? input : [input];
   for (const d of list) {
-    const bad = (why: string) => new Error(`TrueReplay: vacuous declaration ${JSON.stringify(d, (_, v) => (v instanceof RegExp ? String(v) : v))} — ${why}`);
+    const bad = (why: string) => new Error(`TrueFact: vacuous declaration ${JSON.stringify(d, (_, v) => (v instanceof RegExp ? String(v) : v))} — ${why}`);
     switch (d.kind) {
       case "url":
         if (isVacuous(d.matches)) throw bad("url.matches would match any URL");

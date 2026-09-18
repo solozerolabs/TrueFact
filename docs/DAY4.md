@@ -137,7 +137,7 @@ Day 3 revision rows: R1 (fill + click with `required` → `did-not-land` / `vali
 
 ## 8. CI (add to AGENTS.md)
 
-Install a Chrome `localBrowser.launch` can find (`browser-actions/setup-chrome` or `npx playwright install chrome`); containers running as root need `--no-sandbox` via `launch({ args })`; `headless: true` always; every test passes `screenshots: false` or `.truereplay/` appears in CI; no wall-clock assertions (CI boxes are 2–5× slower), only budget-relative ones; Node ≥ 20.6 for `--import tsx`; close the browser before the fixture server.
+Install a Chrome `localBrowser.launch` can find (`browser-actions/setup-chrome` or `npx playwright install chrome`); containers running as root need `--no-sandbox` via `launch({ args })`; `headless: true` always; every test passes `screenshots: false` or `.truefact/` appears in CI; no wall-clock assertions (CI boxes are 2–5× slower), only budget-relative ones; Node ≥ 20.6 for `--import tsx`; close the browser before the fixture server.
 
 ## 9. Open questions, answered
 

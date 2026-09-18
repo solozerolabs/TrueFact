@@ -43,7 +43,7 @@ describe("fleet + gate CLI over jsonl files", () => {
   let dir = "";
   let files: string[] = [];
   before(() => {
-    dir = mkdtempSync(join(tmpdir(), "truereplay-fleet-"));
+    dir = mkdtempSync(join(tmpdir(), "truefact-fleet-"));
     const runs: Step[][] = [run("landed"), run("landed"), run("did-not-land")];
     files = runs.map((r, i) => {
       const p = join(dir, `run${i}.jsonl`);

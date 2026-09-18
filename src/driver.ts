@@ -59,7 +59,7 @@ export function stagehandDriver(stagehand: Stagehand): Driver {
   const active = async (): Promise<Page> => {
     const ctx = stagehand.browser.context;
     const page = (await ctx.activePage()) ?? (await ctx.pages())[0];
-    if (!page) throw new Error("TrueReplay: no active page on the Stagehand browser context");
+    if (!page) throw new Error("TrueFact: no active page on the Stagehand browser context");
     return page;
   };
   return {

@@ -11,11 +11,11 @@ const runs = readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((
 const rep = score(runs);
 
 const pct = (r) => `${(r.p * 100).toFixed(1)}% [${(r.lo * 100).toFixed(1)}–${(r.hi * 100).toFixed(1)}] (${r.x}/${r.n})`;
-let md = `# TrueReplay benchmark\n\nRuns: ${runs.length}\n\n`;
+let md = `# TrueFact benchmark\n\nRuns: ${runs.length}\n\n`;
 for (const [m, g] of Object.entries(rep.byModel)) {
   md += `## ${m}  (n=${g.n}, $${g.usd.toFixed(3)})\n`;
-  md += `- **exec**:   false-success ${pct(g.exec.falseSuccess)} → TrueReplay residual MISS ${pct(g.exec.miss)}\n`;
-  md += `- **belief**: false-success ${pct(g.belief.falseSuccess)} → TrueReplay residual MISS ${pct(g.belief.miss)}\n`;
+  md += `- **exec**:   false-success ${pct(g.exec.falseSuccess)} → TrueFact residual MISS ${pct(g.exec.miss)}\n`;
+  md += `- **belief**: false-success ${pct(g.belief.falseSuccess)} → TrueFact residual MISS ${pct(g.belief.miss)}\n`;
   md += `- cry-wolf ${pct(g.falseAccusation)} · under-confidence ${pct(g.underConfidence)}\n\n`;
 }
 md += `## Gates (pre-registered)\n`;

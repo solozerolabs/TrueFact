@@ -19,7 +19,7 @@ describe("redactText", () => {
 describe("withReplay: cost + jsonl", () => {
   const b = withBrowser();
   let fx: Fixture;
-  const jsonl = join(tmpdir(), `truereplay-${process.pid}.jsonl`);
+  const jsonl = join(tmpdir(), `truefact-${process.pid}.jsonl`);
   before(async () => {
     await b.start();
     fx = await serve({ "/f": `<html><body><main><button id="go">go</button></main></body></html>` });

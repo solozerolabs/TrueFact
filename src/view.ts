@@ -46,7 +46,7 @@ const PAGE = (dataJson: string, title: string) => `<!doctype html>
   .empty { color:var(--muted); }
 </style></head>
 <body>
-<header><h1>TrueReplay</h1><span class="meta" id="meta"></span></header>
+<header><h1>TrueFact</h1><span class="meta" id="meta"></span></header>
 <div class="wrap"><div class="list" id="list"></div><div class="detail" id="detail"><p class="empty">Select a step.</p></div></div>
 <script>window.__STEPS__=${dataJson};</script>
 <script>
@@ -99,7 +99,7 @@ if(steps.length) select(firstProblem>=0?firstProblem:0);
 </body></html>`;
 
 /** Render a standalone HTML timeline for a set of recorded steps. Pure. */
-export function renderHtml(steps: Step[], title = "TrueReplay"): string {
+export function renderHtml(steps: Step[], title = "TrueFact"): string {
   // Neutralize any "</script>" (and "<") in the data so it can't break out of
   // the inline <script> that carries it.
   const data = JSON.stringify(steps).replace(/</g, "\\u003c");

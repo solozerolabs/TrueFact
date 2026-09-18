@@ -108,7 +108,7 @@ const falseHalt = genuine.filter((r) => r.verdict === "did-not-land"); // cry-wo
 const bestTrap = caught.find((r) => r.claim === true) ?? caught[0] ?? trap[0];
 
 const pct = (n, d) => (d ? `${n}/${d} (${Math.round((100 * n) / d)}%)` : "0/0 (—)");
-const md = `# TrueReplay showcase — the optimistic-UI catch
+const md = `# TrueFact showcase — the optimistic-UI catch
 
 Model: **${MODEL}** · n=${N}/task · network sidecar **ON** · ${new Date().toISOString().slice(0, 10)}
 Unlike [bench/out/report.md](../out/report.md) (the 520-run ladder, run before the
@@ -122,8 +122,8 @@ The server records the order as **NOT placed** on every run. What each channel s
 | channel | verdict | correct? |
 |---|---|---|
 | The agent's own claim | success ${pct(believed.length, trap.length)} of runs | ✗ wrong |
-| TrueReplay, page read alone | \`landed\` ${pct(pageFooled.length, trap.length)} | ✗ fooled by the ✅ |
-| **TrueReplay + network** | **\`did-not-land\`** ${pct(caught.length, trap.length)} | ✓ **caught** |
+| TrueFact, page read alone | \`landed\` ${pct(pageFooled.length, trap.length)} | ✗ fooled by the ✅ |
+| **TrueFact + network** | **\`did-not-land\`** ${pct(caught.length, trap.length)} | ✓ **caught** |
 
 The agent believed it, and the page *looked* right — the network channel is what
 tells the truth apart from the banner.
@@ -138,7 +138,7 @@ successes whose shape tempts a false halt. Across ${genuine.length} genuine succ
 ## See one
 
 \`\`\`bash
-truereplay view ${bestTrap?.jsonl ?? OUT + "/optimistic-ui__1.jsonl"}
+truefact view ${bestTrap?.jsonl ?? OUT + "/optimistic-ui__1.jsonl"}
 \`\`\`
 
 Opens on the step that didn't land: the page diff with the ✅ banner, the 500 in
@@ -151,4 +151,4 @@ console.log(`trap caught (network):   ${pct(caught.length, trap.length)}`);
 console.log(`page read alone fooled:  ${pct(pageFooled.length, trap.length)}`);
 console.log(`cry-wolf (false halts):  ${pct(falseHalt.length, genuine.length)}`);
 console.log(`report:  ${OUT}/showcase.md`);
-console.log(`view:    truereplay view ${bestTrap?.jsonl ?? ""}`);
+console.log(`view:    truefact view ${bestTrap?.jsonl ?? ""}`);

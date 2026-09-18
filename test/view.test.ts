@@ -58,7 +58,7 @@ describe("viewFile + CLI: writes a page beside the run", () => {
   let dir = "";
   let runPath = "";
   before(() => {
-    dir = mkdtempSync(join(tmpdir(), "truereplay-view-"));
+    dir = mkdtempSync(join(tmpdir(), "truefact-view-"));
     runPath = join(dir, "run.jsonl");
     writeFileSync(runPath, steps.map((s) => JSON.stringify(s)).join("\n") + "\n");
   });
@@ -72,7 +72,7 @@ describe("viewFile + CLI: writes a page beside the run", () => {
   });
 
   it("the CLI writes the page and prints its path (no browser opened)", () => {
-    const out = execFileSync("node", ["dist/cli.js", "view", runPath], { encoding: "utf8", env: { ...process.env, TRUEREPLAY_NO_OPEN: "1" } });
+    const out = execFileSync("node", ["dist/cli.js", "view", runPath], { encoding: "utf8", env: { ...process.env, TRUEFACT_NO_OPEN: "1" } });
     assert.match(out.trim(), /run\.html$/);
     assert.ok(existsSync(out.trim()));
   });

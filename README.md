@@ -1,21 +1,21 @@
-# TrueReplay
+# TrueFact
 
 **Your browser agent said it placed the order. The order wasn't placed. You found out from a customer.**
 
-TrueReplay wraps your browser agent and, after every action, reads the live page itself — and the network under it — to give an independent verdict: **landed / did-not-land / inconclusive**. It never trusts what the agent claims. The gap between "agent said done" and "the world says done" is the whole product.
+TrueFact wraps your browser agent and, after every action, reads the live page itself — and the network under it — to give an independent verdict: **landed / did-not-land / inconclusive**. It never trusts what the agent claims. The gap between "agent said done" and "the world says done" is the whole product.
 
-- **Silent failures caught.** A click that lands on a cookie overlay, a form that rejected, a page that shows ✅ while the server returned 500 — the agent reports success for all of them. TrueReplay doesn't.
+- **Silent failures caught.** A click that lands on a cookie overlay, a form that rejected, a page that shows ✅ while the server returned 500 — the agent reports success for all of them. TrueFact doesn't.
 - **Not another LLM judge.** The verdict is a deterministic read of the page and the network, not a model grading a model. Sub-second, no extra tokens.
 - **A receipt, not a log.** Every step is recorded on a tamper-evident chain you can replay, assert against offline, and verify.
 
 ## Quickstart
 
 ```bash
-npm install truereplay
+npm install truefact
 ```
 
 ```ts
-import { launch } from "truereplay";
+import { launch } from "truefact";
 
 // Owns the browser so network verification just works — no port to configure.
 const tr = await launch({ model: { modelName: "anthropic/claude-sonnet-5", apiKey } });
@@ -33,7 +33,7 @@ That's the whole runtime API: `launch()`, then your agent runs unchanged. Every 
 ## See what happened
 
 ```bash
-truereplay view run.jsonl
+truefact view run.jsonl
 ```
 
 Opens a standalone timeline: every step with its verdict, and for each one the page diff, the network errors, the screenshot, and — boxed off as the untrusted channel — what the agent claimed. It opens on the first step that didn't land. Save a run with `launch({ jsonl: "run.jsonl" })`.
@@ -51,7 +51,7 @@ export default (v) =>
 ```
 
 ```bash
-truereplay assert run.jsonl --with assertions.mjs   # exits 1 if any write step fails
+truefact assert run.jsonl --with assertions.mjs   # exits 1 if any write step fails
 ```
 
 ## Precision, when a write matters
@@ -68,12 +68,12 @@ await tr.act("click 'Place order'", {
 });
 ```
 
-`probe` is the out-of-band check for optimistic UI a page read can't beat: TrueReplay GETs a status endpoint itself and matches real server state. A broken or unreachable endpoint is `inconclusive`, never a false alarm.
+`probe` is the out-of-band check for optimistic UI a page read can't beat: TrueFact GETs a status endpoint itself and matches real server state. A broken or unreachable endpoint is `inconclusive`, never a false alarm.
 
 ## Prove the record wasn't touched
 
 ```bash
-truereplay verify run.jsonl     # recomputes the hash chain, exits 1 at the first break
+truefact verify run.jsonl     # recomputes the hash chain, exits 1 at the first break
 ```
 
 Every step commits to the one before it, including what the agent claimed. Alter a field, drop a step, or reorder two, and verification fails at that point.
@@ -83,14 +83,14 @@ Every step commits to the one before it, including what the agent claimed. Alter
 Already launch Chrome yourself? Wrap the Stagehand instance directly. Network verification is then opt-in, since you own the launch:
 
 ```ts
-import { withReplay } from "truereplay";
+import { withReplay } from "truefact";
 const tr = withReplay(stagehand, { network: { port } }); // port = your Chrome's --remote-debugging-port
 ```
 
 Driving with **Playwright** instead of Stagehand? Pass a `playwrightDriver` — same verdict engine, no code change to how it reads the page:
 
 ```ts
-import { withReplay, playwrightDriver } from "truereplay";
+import { withReplay, playwrightDriver } from "truefact";
 const tr = withReplay(playwrightDriver(page)); // page = a Playwright Page
 await tr.page.goto(url);
 await tr.act({ selector: "#submit", method: "click" }); // verified: did it actually land?
@@ -108,11 +108,11 @@ const tr = withReplay(stagehand, { redactFields: ["ssn", /card/] }); // values g
 
 ## Does it cry wolf?
 
-A verifier that halts a good run is worse than useless. Across a 520-write benchmark spanning four models weak to strong, TrueReplay raised **zero false halts (0/279)** — its verdict reads the page, so it's the same whoever drives. The one thing a page read alone can't catch is a page that lies (optimistic UI); the network sidecar and `probe` are the out-of-band answers to exactly that. Full method and numbers: [docs/BUSINESS.md](docs/BUSINESS.md), [bench/out/report.md](bench/out/report.md).
+A verifier that halts a good run is worse than useless. Across a 520-write benchmark spanning four models weak to strong, TrueFact raised **zero false halts (0/279)** — its verdict reads the page, so it's the same whoever drives. The one thing a page read alone can't catch is a page that lies (optimistic UI); the network sidecar and `probe` are the out-of-band answers to exactly that. Full method and numbers: [docs/BUSINESS.md](docs/BUSINESS.md), [bench/out/report.md](bench/out/report.md).
 
 ## The rule
 
-TrueReplay never trusts the agent. It reads the page and the network. The agent's claim is recorded on a separate channel and compared only at the end. If those channels touch during measurement, the number is worthless — so they don't.
+TrueFact never trusts the agent. It reads the page and the network. The agent's claim is recorded on a separate channel and compared only at the end. If those channels touch during measurement, the number is worthless — so they don't.
 
 ## Status
 

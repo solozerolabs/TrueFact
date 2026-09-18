@@ -22,7 +22,7 @@ function freePort(): Promise<number> {
 }
 
 export interface LaunchOptions extends Omit<ReplayOptions, "network"> {
-  model?: { modelName: string; apiKey?: string }; // your Stagehand model; TrueReplay is model-agnostic
+  model?: { modelName: string; apiKey?: string }; // your Stagehand model; TrueFact is model-agnostic
   headless?: boolean; // default true
   port?: number; // override the auto-picked Chrome debug port (rarely needed)
 }

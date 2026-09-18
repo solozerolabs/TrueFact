@@ -17,7 +17,7 @@ import type { FormValue, Verdict } from "./postcondition.js";
 export interface BrowserView {
   action: string;
   url: string; // the page URL after the write
-  verdict: Verdict; // TrueReplay's own recorded verdict (evidence, for reference)
+  verdict: Verdict; // TrueFact's own recorded verdict (evidence, for reference)
   treeAdded: string[]; // a11y-tree lines that appeared
   treeRemoved: string[]; // a11y-tree lines that disappeared
   forms: Record<string, FormValue>; // field values after the write (passwords redacted)
@@ -44,7 +44,7 @@ export function toAssertions(mod: unknown): Assertions {
   const d = (mod as { default?: unknown })?.default ?? mod;
   if (typeof d === "function") return { browser: d as BrowserAssertion };
   if (d && typeof d === "object" && "browser" in d) return d as Assertions;
-  throw new Error("TrueReplay: assertion module must default-export a function or { browser } (see defineAssertions)");
+  throw new Error("TrueFact: assertion module must default-export a function or { browser } (see defineAssertions)");
 }
 
 /** Reconstruct a write step's browser view from its recorded evidence. */

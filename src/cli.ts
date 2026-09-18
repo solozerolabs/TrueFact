@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// truereplay CLI. Subcommands:
+// truefact CLI. Subcommands:
 //
-//   truereplay assert <run.jsonl> --with <assertions.mjs>
-//   truereplay verify <run.jsonl>
-//   truereplay view   <run.jsonl>
-//   truereplay fleet  <run.jsonl...>
-//   truereplay gate   <run.jsonl...> [--max-did-not-land 0.05]
+//   truefact assert <run.jsonl> --with <assertions.mjs>
+//   truefact verify <run.jsonl>
+//   truefact view   <run.jsonl>
+//   truefact fleet  <run.jsonl...>
+//   truefact gate   <run.jsonl...> [--max-did-not-land 0.05]
 //
 // `assert` re-runs an assertion module against a recorded run, offline, and
 // exits 1 if any write step fails — a CI gate over stored runs. `verify`
@@ -43,7 +43,7 @@ function fleetOf(files: string[]) {
 
 function fleetCmd(files: string[]): number {
   if (!files.length) {
-    process.stderr.write("usage: truereplay fleet <run.jsonl...>\n");
+    process.stderr.write("usage: truefact fleet <run.jsonl...>\n");
     return 2;
   }
   const s = fleetOf(files);
@@ -54,7 +54,7 @@ function fleetCmd(files: string[]): number {
 
 function gateCmd(files: string[], flags: Record<string, string>): number {
   if (!files.length) {
-    process.stderr.write("usage: truereplay gate <run.jsonl...> [--max-did-not-land 0.05]\n");
+    process.stderr.write("usage: truefact gate <run.jsonl...> [--max-did-not-land 0.05]\n");
     return 2;
   }
   const max = flags["max-did-not-land"] !== undefined ? Number(flags["max-did-not-land"]) : 0.05;
@@ -81,7 +81,7 @@ async function assertCmd(argv: string[]): Promise<number> {
   const wi = argv.indexOf("--with");
   const mod = wi >= 0 ? argv[wi + 1] : undefined;
   if (!jsonl || !mod) {
-    process.stderr.write("usage: truereplay assert <run.jsonl> --with <assertions.mjs>\n");
+    process.stderr.write("usage: truefact assert <run.jsonl> --with <assertions.mjs>\n");
     return 2;
   }
   const report = await reassertFile(jsonl, mod);
@@ -96,8 +96,8 @@ function viewCmd(jsonl: string): number {
   const out = viewFile(jsonl);
   process.stdout.write(`${out}\n`);
   // Best-effort open; the path above is the real deliverable (works headless).
-  // TRUEREPLAY_NO_OPEN skips it — for CI, tests, and headless boxes.
-  if (process.env.TRUEREPLAY_NO_OPEN) return 0;
+  // TRUEFACT_NO_OPEN skips it — for CI, tests, and headless boxes.
+  if (process.env.TRUEFACT_NO_OPEN) return 0;
   const opener = platform() === "darwin" ? "open" : platform() === "win32" ? "explorer" : "xdg-open";
   try {
     spawn(opener, [out], { stdio: "ignore", detached: true }).unref();
@@ -116,11 +116,11 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "gate") { const { files, flags } = parseArgs(argv.slice(1)); return gateCmd(files, flags); }
   process.stderr.write(
     "usage:\n" +
-    "  truereplay assert <run.jsonl> --with <assertions.mjs>\n" +
-    "  truereplay verify <run.jsonl> [--pubkey <key.pem>]\n" +
-    "  truereplay view   <run.jsonl>\n" +
-    "  truereplay fleet  <run.jsonl...>\n" +
-    "  truereplay gate   <run.jsonl...> [--max-did-not-land 0.05]\n",
+    "  truefact assert <run.jsonl> --with <assertions.mjs>\n" +
+    "  truefact verify <run.jsonl> [--pubkey <key.pem>]\n" +
+    "  truefact view   <run.jsonl>\n" +
+    "  truefact fleet  <run.jsonl...>\n" +
+    "  truefact gate   <run.jsonl...> [--max-did-not-land 0.05]\n",
   );
   return 2;
 }
@@ -128,7 +128,7 @@ async function main(argv: string[]): Promise<number> {
 main(process.argv.slice(2)).then(
   (code) => process.exit(code),
   (e) => {
-    process.stderr.write(`truereplay: ${e instanceof Error ? e.message : String(e)}\n`);
+    process.stderr.write(`truefact: ${e instanceof Error ? e.message : String(e)}\n`);
     process.exit(2);
   },
 );

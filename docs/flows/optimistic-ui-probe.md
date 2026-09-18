@@ -6,7 +6,7 @@
 optimistic-UI failure the page cannot reveal: the page renders "✅ Order placed"
 while the server call 500s. Stagehand v4 exposes no AJAX network response
 (`page.on` supports only `console`; `Response` comes only from navigation), so
-the only independent signal is one **TrueReplay fetches itself** against real
+the only independent signal is one **TrueFact fetches itself** against real
 server state. `probe` is that: data (a URL + a matcher), never a callback, so no
 verdict path ever sees the agent's claim.
 
@@ -22,7 +22,7 @@ On optimistic-UI the independent GET shows no placed order → the probe is unme
 
 **Shape.**
 `{ kind: "probe"; get: string; status?: "ok" | number; text?: string | RegExp; absent?: boolean }`
-- `get` — URL TrueReplay GETs. Relative resolves against the current page URL.
+- `get` — URL TrueFact GETs. Relative resolves against the current page URL.
 - `status` — `"ok"` (2xx) or an exact code. Optional.
 - `text` — body match. Optional. At least one of `status`/`text` is required
   (a bare `get` matches nothing meaningful → vacuous → throws before the write).
