@@ -20,7 +20,8 @@
     "probe:omlx": "node scripts/probe-omlx-act.mjs",
     "probe:tree": "node scripts/probe-tree.mjs",
     "bench": "node --env-file-if-exists=.env scripts/bench/run.mjs",
-    "bench:score": "node scripts/bench/score.mjs"
+    "bench:score": "node scripts/bench/score.mjs",
+    "bench:showcase": "node --env-file-if-exists=.env scripts/bench/showcase.mjs"
   },
   "keywords": [
     "browser-agent",
