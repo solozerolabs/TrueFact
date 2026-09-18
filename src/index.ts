@@ -14,6 +14,7 @@ import type {
 import { detectSession, fingerprint, settle, type Fingerprint, type SessionEvidence } from "./session.js";
 import {
   applyNetwork,
+  applyNetworkLift,
   captureState,
   decideWrite,
   readTree,
@@ -486,15 +487,25 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
     // caller-declared apiOrigins, so a third-party analytics 500 never fires
     // this (the cry-wolf guard); a split-origin write host opts in explicitly.
     if (sc) {
-      const pageOrigin = new URL(beforeState!.fp.href || "http://x").origin;
+      const origins = [new URL(beforeState!.fp.href || "http://x").origin, ...(opts.network?.apiOrigins ?? [])];
       await sc.settle(); // let any in-flight 2xx body reads land before we read
-      const errors = sc.errorsSince(netMark, [pageOrigin, ...(opts.network?.apiOrigins ?? [])]);
+      const errors = sc.errorsSince(netMark, origins);
       const net = applyNetwork(verdict, errors);
       if (net) {
         post.verdict = net.verdict;
         post.reason = net.reason;
         post.confidence = net.confidence;
         verdict = net.verdict;
+      } else {
+        // No server error. If the page verdict is only uncertain (page changed
+        // but unnamed) and a write was accepted, the network lifts it to landed.
+        const lift = applyNetworkLift(verdict, post.reason, sc.landedSince(netMark, origins));
+        if (lift) {
+          post.verdict = lift.verdict;
+          post.reason = lift.reason;
+          post.confidence = lift.confidence;
+          verdict = lift.verdict;
+        }
       }
       if (errors.length) post.network = { errors };
     }

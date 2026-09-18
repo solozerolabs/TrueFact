@@ -322,6 +322,24 @@ export function applyNetwork(current: Verdict, errors: { url: string; status: nu
   return { verdict: "did-not-land", reason: "network-error", confidence: "high" };
 }
 
+// Reasons that mean "the page changed, we just couldn't name the change" — safe
+// to lift to landed when the server also accepted a write. `no-change` is
+// deliberately EXCLUDED: a dead click plus a same-origin background beacon must
+// never become a false landed. `validation-error`/`error-text`/`prompt` are
+// signals, not uncertainty, so they are excluded too.
+const LIFTABLE = new Set<PostReason>(["changed-unclassified", "unsettled", "hash-only-nav"]);
+
+/**
+ * The positive mirror of applyNetwork: a clean mutating 2xx on a watched origin
+ * lifts an UNCERTAIN page verdict to landed. It only lifts (never demotes, never
+ * overrides a mechanism-backed verdict), and only the liftable reasons above —
+ * so it closes a chunk of the inconclusive rate with no new false-landed path.
+ */
+export function applyNetworkLift(current: Verdict, reason: PostReason, landed: boolean): Outcome | null {
+  if (current !== "inconclusive" || !landed || !LIFTABLE.has(reason)) return null;
+  return { verdict: "landed", reason: "network-ok", confidence: "high" };
+}
+
 /**
  * One in-page read of a selector's target (css | xpath= | bare xpath): its
  * value (input / select), text, whether it exists, and whether it is a

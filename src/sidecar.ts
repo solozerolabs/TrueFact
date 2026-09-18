@@ -27,6 +27,9 @@ export interface Sidecar {
   settle(): Promise<void>;
   /** Errors on a watched origin since `mark`, after retry-collapse. */
   errorsSince(mark: number, origins: string[]): NetError[];
+  /** True if a clean mutating 2xx write landed on a watched origin since `mark`
+   *  — the positive signal that lifts an uncertain page verdict. */
+  landedSince(mark: number, origins: string[]): boolean;
   close(): void;
 }
 
@@ -70,6 +73,13 @@ export async function attachSidecarConn(conn: CdpConn, opts: SidecarOptions & { 
       return since
         .filter((o) => isError(o) && !recovered.has(key(o)))
         .map((o) => ({ url: o.url, status: o.status }));
+    },
+    landedSince: (mark, origins) => {
+      const ok = new Set(origins.filter(Boolean));
+      if (!ok.size) return false;
+      // A clean mutating 2xx on a watched origin = the write reached the server
+      // and was accepted. (The tracker only reports mutating requests.)
+      return outcomes.slice(mark).some((o) => ok.has(originOf(o.url)) && !isError(o) && o.status != null && o.status >= 200 && o.status < 300);
     },
     close: () => {
       if (ownsConn) conn.close();
