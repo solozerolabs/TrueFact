@@ -4,13 +4,13 @@
 // ever called — not to act, and (as always) not to judge. It serves a checkout
 // page that shows "✅ Order placed" while its own POST 500s, then shows the two
 // channels TrueFact already computes:
-//   page-read alone → fooled (the ✅ text reads as landed)
+//   page-read alone → inconclusive (the ✅ is not proof the write landed)
 //   with network    → did-not-land (the 5xx behind the ✅)
-// The gap between those two lines is the whole product. Writes demo-run.jsonl
-// so the viewer/asserter/verifier have something real to open.
+// The point: the success banner proves nothing; the network is what settles it.
+// Writes demo-run.jsonl so the viewer/asserter/verifier have something to open.
 //
-// Stagehand is a peer dep and only supplies a keyless Chrome + Playwright page;
-// it is dynamic-imported here so `view`/`verify`/`assert`/`fleet` stay engine-free.
+// Stagehand is a peer dep and only supplies a keyless Chrome; it is
+// dynamic-imported here so `view`/`verify`/`assert`/`fleet` stay engine-free.
 import { createServer } from "node:http";
 import net from "node:net";
 import { withTrueFact } from "./index.js";
@@ -69,6 +69,11 @@ export async function runDemo(): Promise<number> {
   const page = (await ctx.activePage()) ?? (await ctx.pages())[0];
 
   const jsonl = "demo-run.jsonl";
+  // Drive the Playwright driver, not Stagehand's act(): a selector+method click
+  // needs no model, so the demo stays keyless (Stagehand v4 refuses to init
+  // without an LLM even to replay a deterministic action). The page-read alone
+  // is therefore `inconclusive` (it cannot confirm the write) — the honest point
+  // is that the ✅ is not proof; the network sidecar is what says did-not-land.
   const w = withTrueFact(playwrightDriver(page as never), { network: { port }, screenshots: false, waitMs: 1500, jsonl });
   await w.page.goto(`http://127.0.0.1:${fxPort}/`);
   await w.act({ selector: "#place", description: "Place order button", method: "click" });
@@ -83,8 +88,13 @@ export async function runDemo(): Promise<number> {
   process.stdout.write(`    truefact view ${jsonl}      # the timeline\n`);
   process.stdout.write(`    truefact verify ${jsonl}    # the tamper-evident chain\n\n`);
 
+  // Tear down every handle so a caller (e.g. the test runner) exits cleanly:
+  // the sidecar ws (w.close), the Chrome process (browser.close — Stagehand was
+  // handed an external browser, so closing it is what actually kills Chrome),
+  // and the fixture server incl. the browser's keep-alive socket.
   await w.close();
-  await sh.close();
+  await (browser as { close(): Promise<void> }).close();
+  fx.closeAllConnections?.();
   fx.close();
   return step.verdict === "did-not-land" ? 0 : 1;
 }
