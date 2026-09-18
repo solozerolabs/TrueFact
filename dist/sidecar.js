@@ -78,7 +78,10 @@ export async function attachSidecar(port) {
         ws.send(JSON.stringify({ id: ++id, method: "Network.enable" }));
         return {
             mark: () => events.length,
-            errorsSince: (mark, origin) => (origin ? events.slice(mark).filter((e) => originOf(e.url) === origin) : []),
+            errorsSince: (mark, origins) => {
+                const ok = new Set(origins.filter(Boolean));
+                return ok.size ? events.slice(mark).filter((e) => ok.has(originOf(e.url))) : [];
+            },
             close: () => {
                 try {
                     ws.close();

@@ -73,6 +73,7 @@ export interface TrueFactOptions {
     signingKey?: string;
     network?: {
         port: number;
+        apiOrigins?: string[];
     };
     redactFields?: (string | RegExp)[];
 }

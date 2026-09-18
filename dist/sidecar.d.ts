@@ -4,7 +4,7 @@ export interface NetError {
 }
 export interface Sidecar {
     mark(): number;
-    errorsSince(mark: number, origin: string): NetError[];
+    errorsSince(mark: number, origins: string[]): NetError[];
     close(): void;
 }
 /**

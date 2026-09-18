@@ -118,7 +118,11 @@ export interface TrueFactOptions {
   // launched with `localBrowser.launch({ port })` and demotes an optimistic write
   // (page ✅) to did-not-land when its own backend returned a same-origin 5xx.
   // Off by default: the certified 0-false-halt page-read verdict is unchanged.
-  network?: { port: number };
+  // apiOrigins: extra origins whose failed writes also demote (default: page
+  // origin only). Name your write host(s) for a split-origin app (app.x.com ->
+  // api.x.com, *.supabase.co, api.stripe.com); an explicit allowlist keeps the
+  // cry-wolf guard intact — a third-party analytics 500 still never fires.
+  network?: { port: number; apiOrigins?: string[] };
   // Length-mask the stored values of these form fields (matched by name/id):
   // strings match exactly, RegExps test the key. For PII that is not
   // secret-shaped (a name, an address) and so slips past the always-on
@@ -406,11 +410,13 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
     const session = await detectSession(page);
     let verdict = decision.kind === "write" ? sessionVerdict(post.verdict, session, post.reason) : post.verdict;
 
-    // M2: a same-origin server error in this write's window overrides an
-    // optimistic page-read verdict. errorsSince() filters to the page origin, so
-    // a third-party analytics 500 never fires this (the cry-wolf guard).
+    // M2: a server error in this write's window overrides an optimistic
+    // page-read verdict. errorsSince() filters to the page origin plus any
+    // caller-declared apiOrigins, so a third-party analytics 500 never fires
+    // this (the cry-wolf guard); a split-origin write host opts in explicitly.
     if (sc) {
-      const errors = sc.errorsSince(netMark, new URL(beforeState!.fp.href || "http://x").origin);
+      const pageOrigin = new URL(beforeState!.fp.href || "http://x").origin;
+      const errors = sc.errorsSince(netMark, [pageOrigin, ...(opts.network?.apiOrigins ?? [])]);
       const net = applyNetwork(verdict, errors);
       if (net) {
         post.verdict = net.verdict;

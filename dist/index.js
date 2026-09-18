@@ -275,11 +275,13 @@ export function withTrueFact(source, opts = {}) {
             post.newPageUrl = await page.url().catch(() => "");
         const session = await detectSession(page);
         let verdict = decision.kind === "write" ? sessionVerdict(post.verdict, session, post.reason) : post.verdict;
-        // M2: a same-origin server error in this write's window overrides an
-        // optimistic page-read verdict. errorsSince() filters to the page origin, so
-        // a third-party analytics 500 never fires this (the cry-wolf guard).
+        // M2: a server error in this write's window overrides an optimistic
+        // page-read verdict. errorsSince() filters to the page origin plus any
+        // caller-declared apiOrigins, so a third-party analytics 500 never fires
+        // this (the cry-wolf guard); a split-origin write host opts in explicitly.
         if (sc) {
-            const errors = sc.errorsSince(netMark, new URL(beforeState.fp.href || "http://x").origin);
+            const pageOrigin = new URL(beforeState.fp.href || "http://x").origin;
+            const errors = sc.errorsSince(netMark, [pageOrigin, ...(opts.network?.apiOrigins ?? [])]);
             const net = applyNetwork(verdict, errors);
             if (net) {
                 post.verdict = net.verdict;

@@ -42,10 +42,16 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
   let app: Server;
   let third: Server;
   let base = "";
+  let thirdBase = "";
 
   before(async () => {
-    third = createServer((req, res) => (req.url === "/boom" ? res.writeHead(500).end("x") : res.writeHead(404).end()));
-    const thirdBase = await listen(third);
+    // A real cross-origin write API sets CORS headers (its own app must read
+    // the response), so a 500 arrives as responseReceived(500), not a wire fail.
+    third = createServer((req, res) => {
+      res.setHeader("access-control-allow-origin", "*");
+      return req.url === "/boom" ? res.writeHead(500).end("x") : res.writeHead(404).end();
+    });
+    thirdBase = await listen(third);
     app = createServer((req, res) => {
       if (req.method === "POST" && req.url === "/submit") return res.writeHead(500).end("upstream exploded");
       if (req.method === "POST" && req.url === "/declined") return res.writeHead(402, { "content-type": "application/json" }).end('{"error":"card declined"}');
@@ -66,10 +72,10 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     await shut(third);
   });
 
-  const run = async (route: "optimistic" | "declined-checkout" | "clean" | "thirdparty") => {
+  const run = async (route: "optimistic" | "declined-checkout" | "clean" | "thirdparty", apiOrigins?: string[]) => {
     const page = (await sh.browser.context.activePage())!;
     const fake = fakeStagehand(sh, page, { actions: [{ selector: "#place" }] });
-    const w = withTrueFact(fake, { network: { port: PORT }, screenshots: false, waitMs: 600 });
+    const w = withTrueFact(fake, { network: { port: PORT, apiOrigins }, screenshots: false, waitMs: 600 });
     await w.page.goto(`${base}/${route}`);
     await w.act("place the order");
     await w.close();
@@ -121,5 +127,15 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     const step = await run("thirdparty");
     assert.equal(step.verdict, "landed");
     assert.equal(step.evidence.postcondition?.network, undefined);
+  });
+
+  it("apiOrigins: a declared cross-origin write host DOES demote — the split-origin fix (app -> api.host)", async () => {
+    // Same cross-origin 500 as the cry-wolf test above, but now the caller
+    // names that origin as its write API. It must flip to did-not-land, while
+    // the default (previous test) leaves it landed — the guard stays opt-in.
+    const step = await run("thirdparty", [thirdBase]);
+    assert.equal(step.verdict, "did-not-land");
+    assert.equal(step.evidence.postcondition?.reason, "network-error");
+    assert.equal(step.evidence.postcondition?.network?.errors[0]?.status, 500);
   });
 });

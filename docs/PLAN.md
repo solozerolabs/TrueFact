@@ -98,6 +98,13 @@ Ranked by (developer UX impact) × (de-risks the "does it generalize" question) 
    {flatten:true}`, keyed event map across sessionIds. Without this the flagship
    catch is a false-landed on any Stripe-iframe / PayPal-popup checkout — the
    exact market named. Effort: M. Treat as a bug fix, not an experiment.
+   **Update (experiment run #2, 2026-09-17):** the more common cross-origin case
+   is not iframes but the plain **API subdomain** (app.x.com -> api.x.com,
+   *.supabase.co, api.stripe.com). The sidecar already *captures* those failed
+   writes; the same-origin filter was dropping them. **Shipped `apiOrigins`** (an
+   opt-in origin allowlist) to close that — see docs/EXPERIMENT-SITES.md run #2.
+   Multi-target (popups/iframes, where the write has no readable response at all)
+   remains the harder, still-open part.
 
 4. **RFC 8785 (JCS) canonical JSON in `chain.ts`.** Today `canonical()` is a
    custom scheme, so **no third party can verify a TrueFact chain and we can't

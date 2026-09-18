@@ -15,7 +15,7 @@ export interface NetError {
 
 export interface Sidecar {
   mark(): number; // an opaque cursor into the event stream, taken before a write
-  errorsSince(mark: number, origin: string): NetError[]; // same-origin write errors (5xx any / 4xx on POST-like / failed) since the cursor
+  errorsSince(mark: number, origins: string[]): NetError[]; // write errors (5xx any / 4xx on POST-like / failed) since the cursor, from any allowed origin
   close(): void;
 }
 
@@ -94,7 +94,10 @@ export async function attachSidecar(port: number): Promise<Sidecar | null> {
 
     return {
       mark: () => events.length,
-      errorsSince: (mark, origin) => (origin ? events.slice(mark).filter((e) => originOf(e.url) === origin) : []),
+      errorsSince: (mark, origins) => {
+        const ok = new Set(origins.filter(Boolean));
+        return ok.size ? events.slice(mark).filter((e) => ok.has(originOf(e.url))) : [];
+      },
       close: () => {
         try {
           ws.close();
