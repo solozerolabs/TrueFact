@@ -54,9 +54,11 @@ export interface WriteTracker {
    *  `pendingWrites` counts only that action's own requests, not a straggler
    *  from a previous step. */
   seq(): number;
-  /** How many watched-origin mutating requests started at/after `sinceSeq` are
-   *  still awaiting a response — the writes we cannot yet call landed (an
-   *  optimistic ✅ whose POST is still in flight). */
+  /** How many watched-origin mutating requests started strictly after `sinceSeq`
+   *  are still awaiting a response — the writes we cannot yet call landed (an
+   *  optimistic ✅ whose POST is still in flight). `sinceSeq` is the last seq at
+   *  the action's start, so `> sinceSeq` scopes to this action's own requests and
+   *  excludes a prior step's straggler sitting at exactly `sinceSeq`. */
   pendingWrites(sinceSeq: number, watched: (url: string) => boolean): number;
 }
 
@@ -151,7 +153,7 @@ export function trackWrites(
     pendingWrites: (sinceSeq, watched) => {
       let n = 0;
       for (const r of reqOf.values())
-        if (r.seq >= sinceSeq && r.status === undefined && MUTATING.has(r.method.toUpperCase()) && watched(r.url)) n++;
+        if (r.seq > sinceSeq && r.status === undefined && MUTATING.has(r.method.toUpperCase()) && watched(r.url)) n++;
       return n;
     },
   };
