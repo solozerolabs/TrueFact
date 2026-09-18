@@ -5,7 +5,7 @@
 // action bracket that just closed. The classification policy lives here; the
 // event wiring and the 2xx-then-cancel guard are shared with `watch` in
 // netwatch.ts, so the two modes can never drift apart again.
-import { cdpConnect, type CdpConn } from "./cdp.js";
+import { cdpConnectBrowser, type CdpConn } from "./cdp.js";
 import { trackWrites, isWriteError, originOf, type WriteOutcome } from "./netwatch.js";
 
 // Re-exported for the modules that imported these from here before netwatch.
@@ -41,7 +41,8 @@ export interface Sidecar {
  * a run or fabricate a verdict.
  */
 export async function attachSidecar(port: number, opts: SidecarOptions = {}): Promise<Sidecar | null> {
-  const conn = await cdpConnect(port);
+  // Browser-level so popups and cross-origin iframes are seen too (see cdp.ts).
+  const conn = await cdpConnectBrowser(port);
   if (!conn) return null;
   return attachSidecarConn(conn, { ...opts, ownsConn: true });
 }
@@ -55,6 +56,9 @@ export async function attachSidecarConn(conn: CdpConn, opts: SidecarOptions & { 
   const ownsConn = opts.ownsConn ?? false;
   const outcomes: WriteOutcome[] = [];
   const tracker = trackWrites(conn, { bodyErrors: opts.bodyErrors, onOutcome: (o) => outcomes.push(o) });
+  // Enables Network on a page/fd conn (serve's shared channel). On a browser-level
+  // conn (attachSidecar) it's a harmless no-op — that connector enables Network
+  // per child session on attach, since the browser target has no Network domain.
   await conn.cmd("Network.enable");
 
   const key = (o: WriteOutcome) => o.method + " " + o.url;

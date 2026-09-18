@@ -55,9 +55,10 @@ new verdict semantics, the sidecar's guarantees intact.
 - **Single page target in v1; multi-target deferred.** Run #2 proved a
   cross-origin **API subdomain** (`app.x.com` → `api.x.com`, `*.supabase.co`) is
   main-frame network and is already seen by the single page-target session +
-  `apiOrigins`. Separate CDP targets are needed only for **popups and
-  cross-origin iframes** (Stripe-iframe checkout) — that is v2 via
-  `Target.setAutoAttach{flatten:true}` + per-`sessionId` routing (teams 1/3).
+  `apiOrigins`. Separate CDP targets are needed for **popups and cross-origin iframes**
+  (Stripe-iframe checkout); the wrapped-mode sidecar now attaches them via
+  `cdpConnectBrowser` (`Target.setAutoAttach{flatten:true}` + per-`sessionId`
+  routing). `watch` (observe mode) stays single page-target.
 - **Latency/cost:** passive, event-driven, no LLM, ~$0. Per-write latency is a
   short retry-collapse grace (~1s) before finalizing a failure; a clean write is
   reported on `loadingFinished`. No hot-path poll.
@@ -100,8 +101,9 @@ mutating request returned a write-error** (5xx / 4xx-on-mutating / `loadingFaile
    `landed` (accepted write request). The DOM-grounded verdict and `inconclusive`
    reconstruction wait for §6.
 3. **Attach: raw CDP or `connectOverCDP`?** Raw CDP. (§2)
-4. **Multi-target now?** No. Single page target covers the API-subdomain
-   majority (run #2). `setAutoAttach` multi-target is v2 for iframe/popup.
+4. **Multi-target now?** Shipped for the wrapped sidecar (`cdpConnectBrowser`,
+   popups + cross-origin iframes). `watch` stays single page target — the
+   API-subdomain majority (run #2) plus `apiOrigins`.
 5. **A Browser-Use driver?** Still no. `watch` covers Browser-Use (and every
    framework) generically — this is the answer PLAN §7.3 anticipated.
 6. **`bodyErrors` in `watch`?** It should work where `watch` owns the `Network`
@@ -138,9 +140,9 @@ mutating request returned a write-error** (5xx / 4xx-on-mutating / `loadingFaile
   uncertified surface with no shared code with the proven path. It ships only
   after a **passive-mode cry-wolf corpus on real sites** (the PLAN §8 experiment,
   run in attach mode using `watch` itself) reaches its own published 0/N.
-- **Multi-target** (`setAutoAttach{flatten:true}`) for popup/iframe checkout, and
-  the per-`sessionId` `getResponseBody` fix that also closes the `bodyErrors`
-  Playwright-path ceiling from run #3.
+- **Multi-target** (`setAutoAttach{flatten:true}`) for popup/iframe checkout, with
+  the per-`sessionId` `getResponseBody` fix — SHIPPED for the wrapped sidecar
+  (`cdpConnectBrowser`); `watch` observe-mode multi-target remains future work.
 
 ## 7. Why this is the right long-term call
 

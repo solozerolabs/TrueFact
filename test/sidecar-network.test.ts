@@ -10,6 +10,7 @@ import { Stagehand, localBrowser } from "@browserbasehq/stagehand";
 import { withTrueFact } from "../src/index.js";
 import { applyNetwork } from "../src/postcondition.js";
 import { verifyChain } from "../src/chain.js";
+import { playwrightDriver } from "../src/driver-playwright.js";
 import { fakeStagehand } from "./helpers.js";
 
 // A page that posts to `postUrl` on click, then shows ✅ regardless (optimistic).
@@ -263,5 +264,99 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     const { step, ms } = await runInflight("slow-body-co", 2000);
     assert.equal(step.verdict, "landed");
     assert.ok(ms < 1400, `bracket waited ${ms}ms for a 2xx body`); // < the 1500ms body delay
+  });
+});
+
+// §2 — multi-target. The failing write behind a ✅ often happens in a popup
+// (OAuth / 3DS) or a cross-origin iframe (Stripe), each a separate CDP target a
+// single-page reader is blind to. cdpConnectBrowser auto-attaches them (flatten +
+// sessionId) and resumes each, so the child's writes verify like any other. Own
+// browser so popups don't leak into the suites above. Driven by a real Playwright
+// over CDP — the sidecar is a pure out-of-band second client, as in production.
+describe("network sidecar: multi-target (popups + cross-origin iframes)", () => {
+  const opener = (child: string) =>
+    `<!doctype html><meta charset=utf8><title>Pay</title><button id=place>Pay</button><p id=ok></p>
+     <script>document.getElementById('place').onclick=()=>{window.open('/${child}');document.getElementById('ok').textContent='✅ Order placed — #4242';};</script>`;
+  const child = (postUrl: string, twice = false) =>
+    `<!doctype html><meta charset=utf8><title>c</title><p>processing…</p>
+     <script>fetch(${JSON.stringify(postUrl)},{method:'POST'})${twice ? `.finally(()=>fetch(${JSON.stringify(postUrl)},{method:'POST'}))` : ""}.catch(()=>{});</script>`;
+  const iframeHost = (frameSrc: string) =>
+    `<!doctype html><meta charset=utf8><title>Checkout</title><button id=place>Pay</button><p id=ok></p>
+     <iframe src=${JSON.stringify(frameSrc)}></iframe>
+     <script>document.getElementById('place').onclick=()=>{document.getElementById('ok').textContent='✅ Order placed — #4242';};</script>`;
+
+  const PORT = 9422;
+  let browser: Awaited<ReturnType<typeof localBrowser.launch>>;
+  let page: import("playwright-core").Page;
+  let app: Server, third: Server, base = "", thirdBase = "", flaky = 0;
+
+  before(async () => {
+    third = createServer((req, res) => {
+      res.setHeader("access-control-allow-origin", "*");
+      return req.url === "/boom" ? res.writeHead(500).end("x") : res.writeHead(404).end();
+    });
+    thirdBase = await listen(third);
+    app = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/w-500") return res.writeHead(500).end("boom");
+      if (req.method === "POST" && req.url === "/w-body") return res.writeHead(200, { "content-type": "application/json" }).end('{"data":null,"errors":[{"message":"declined"}]}');
+      if (req.method === "POST" && req.url === "/w-flaky") return res.writeHead(flaky++ === 0 ? 500 : 200, { "content-type": "application/json" }).end("{}");
+      const u = new URL(req.url ?? "/", "http://x");
+      if (u.pathname === "/open") return res.writeHead(200, { "content-type": "text/html" }).end(opener(u.searchParams.get("c") ?? "c-500"));
+      if (u.pathname === "/c-500") return res.writeHead(200, { "content-type": "text/html" }).end(child("/w-500"));
+      if (u.pathname === "/c-body") return res.writeHead(200, { "content-type": "text/html" }).end(child("/w-body"));
+      if (u.pathname === "/c-flaky") return res.writeHead(200, { "content-type": "text/html" }).end(child("/w-flaky", true));
+      if (u.pathname === "/c-third") return res.writeHead(200, { "content-type": "text/html" }).end(child(`${thirdBase}/boom`));
+      if (u.pathname === "/iframe-third") return res.writeHead(200, { "content-type": "text/html" }).end(iframeHost(`${thirdBase}/boom-frame`));
+      return res.writeHead(404).end("no");
+    });
+    base = await listen(app);
+    browser = await localBrowser.launch({ headless: true, port: PORT });
+    const { chromium } = await import("playwright-core");
+    const cdp = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`);
+    page = cdp.contexts()[0].pages()[0] ?? (await cdp.contexts()[0].newPage());
+  });
+  after(async () => { await browser?.close(); await shut(app); await shut(third); });
+
+  const drive = async (route: string, opts: { apiOrigins?: string[]; bodyErrors?: boolean } = {}) => {
+    flaky = 0;
+    const w = withTrueFact(playwrightDriver(page), { network: { port: PORT, apiOrigins: opts.apiOrigins, bodyErrors: opts.bodyErrors }, screenshots: false, waitMs: 2000 });
+    await w.page.goto(`${base}/${route}`);
+    await w.act({ selector: "#place", method: "click" });
+    const step = [...w.replay.steps].reverse().find((s) => s.kind === "write")!;
+    await w.close();
+    for (const pg of page.context().pages()) if (pg !== page) await pg.close().catch(() => {}); // don't leak popups
+    return step;
+  };
+
+  it("popup: an optimistic ✅ whose popup POST 500s → did-not-land (the child target's write is now seen; proves the popup also loaded, i.e. resume works)", async () => {
+    const step = await drive("open?c=c-500");
+    assert.equal(step.verdict, "did-not-land");
+    assert.equal(step.evidence.postcondition?.reason, "network-error");
+    assert.equal(step.evidence.postcondition?.network?.errors[0]?.status, 500);
+  });
+
+  it("popup cross-origin: a child 500 to an UNlisted origin never demotes (cry-wolf guard survives multi-target)", async () => {
+    const step = await drive("open?c=c-third");
+    assert.equal(step.verdict, "landed");
+    assert.equal(step.evidence.postcondition?.network, undefined);
+  });
+
+  it("popup cross-origin, declared: the same child 500 to an apiOrigins host DOES demote (embedded-checkout opt-in)", async () => {
+    const step = await drive("open?c=c-third", { apiOrigins: [thirdBase] });
+    assert.equal(step.verdict, "did-not-land");
+    assert.equal(step.evidence.postcondition?.reason, "network-error");
+  });
+
+  it("popup + bodyErrors: a child 200 whose body says it failed → did-not-land (proves getResponseBody is routed to the child sessionId)", async () => {
+    const step = await drive("open?c=c-body", { bodyErrors: true });
+    assert.equal(step.verdict, "did-not-land");
+    assert.equal(step.evidence.postcondition?.reason, "network-error");
+    assert.equal(step.evidence.postcondition?.network?.errors[0]?.status, 200);
+  });
+
+  it("popup retry-collapse spans sessions: a child 500-then-200 to one endpoint nets landed, never did-not-land", async () => {
+    const step = await drive("open?c=c-flaky");
+    assert.equal(step.verdict, "landed");
+    assert.equal(step.evidence.postcondition?.network, undefined);
   });
 });

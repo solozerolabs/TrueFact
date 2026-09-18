@@ -76,7 +76,7 @@ export function trackWrites(
   // requestId → what we know so far. Deleted the moment its outcome is emitted,
   // so the map never grows without bound over a long-lived watch. `seq` orders
   // requests so a bracket can scope "still in flight" to its own writes.
-  const reqOf = new Map<string, { url: string; method: string; status?: number; seq: number }>();
+  const reqOf = new Map<string, { url: string; method: string; status?: number; seq: number; sessionId?: string }>();
   const inflight = new Set<Promise<void>>();
   let seqNo = 0;
   const is2xx = (s: number) => s >= 200 && s < 300;
@@ -85,12 +85,14 @@ export function trackWrites(
     reqOf.delete(id);
     opts.onOutcome(o);
   };
-  const readBodyThen = (id: string, rec: { url: string; method: string; status: number }): void => {
+  const readBodyThen = (id: string, rec: { url: string; method: string; status: number; sessionId?: string }): void => {
     reqOf.delete(id); // terminal — a later loadingFailed must not double-emit
     const pr = (async () => {
       let bodyError = false;
       try {
-        const r = (await conn.cmd("Network.getResponseBody", { requestId: id })) as { body?: string; base64Encoded?: boolean } | undefined;
+        // The body lives in the target that made the request — a child session's
+        // body is unreadable from the root, so route by the owning sessionId.
+        const r = (await conn.cmd("Network.getResponseBody", { requestId: id }, rec.sessionId)) as { body?: string; base64Encoded?: boolean } | undefined;
         if (r?.body) {
           const text = r.base64Encoded ? Buffer.from(r.body, "base64").toString("utf8") : r.body;
           bodyError = bodyRe!.test(text);
@@ -104,9 +106,9 @@ export function trackWrites(
     void pr.finally(() => inflight.delete(pr));
   };
 
-  conn.on("Network.requestWillBeSent", (p) => {
+  conn.on("Network.requestWillBeSent", (p, sessionId) => {
     const req = p.request as { url?: string; method?: string } | undefined;
-    reqOf.set(p.requestId as string, { url: req?.url ?? "", method: req?.method ?? "GET", seq: ++seqNo });
+    reqOf.set(p.requestId as string, { url: req?.url ?? "", method: req?.method ?? "GET", seq: ++seqNo, sessionId });
   });
   conn.on("Network.responseReceived", (p) => {
     const id = p.requestId as string;
@@ -125,7 +127,7 @@ export function trackWrites(
     const rec = reqOf.get(id); // gone already if it was a non-2xx write (emitted above)
     if (!rec || !MUTATING.has(rec.method.toUpperCase())) { reqOf.delete(id); return; }
     const status = rec.status ?? 0; // a 2xx write (non-2xx already emitted)
-    if (bodyRe && is2xx(status)) return readBodyThen(id, { url: rec.url, method: rec.method, status });
+    if (bodyRe && is2xx(status)) return readBodyThen(id, { url: rec.url, method: rec.method, status, sessionId: rec.sessionId });
     emit(id, { url: rec.url, method: rec.method, status: rec.status ?? null, bodyError: false });
   });
   conn.on("Network.loadingFailed", (p) => {
