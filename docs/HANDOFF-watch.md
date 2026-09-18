@@ -143,15 +143,17 @@ for real-site runs).
 
 ## What needs to be done next (ranked)
 
-1. **The real-site cry-wolf experiment, in attach mode** — THE gate (PLAN.md §8).
-   Use `truefact watch` itself against 15–20 real sites (docs/EXPERIMENT-SITES.md
-   matrix) with a real agent, hand-score verdict vs truth. `watch` was built
-   partly to BE this harness. This unblocks npm publish (paused) and is worth
-   more than any feature. Watch for the residual cry-wolf risk the devil flagged:
-   a one-off same-origin background mutating failure (e.g. a token-refresh 401
-   with no retry) — measure how often it happens on real sites; if non-trivial,
-   tighten `watch`'s default (e.g. exclude 401/403 from passive did-not-land, or
-   require `--api-origins`).
+1. ~~**The real-site cry-wolf experiment, in attach mode** — THE gate.~~ **DONE
+   2026-09-18 — GATE PASSED (docs/EXPERIMENT-SITES.md run #4).** Drove `truefact
+   watch` (observe mode) against a controllable ground-truth matrix + 20 real
+   sites. The residual risk the devil flagged WAS non-trivial: first pass showed
+   3 false `did-not-land` / 20 sites — a same-origin 403 JWT probe (vercel) and
+   two navigation-canceled beacons (theverge 204, linkedin 200). Tightened
+   `watch`'s passive default (observe mode only; wrapped/sidecar untouched): (a)
+   exclude 401/403 auth from passive did-not-land, (b) a `loadingFailed` after a
+   2xx is `landed` not `did-not-land`. Re-run: **cry-wolf 0/20**, all real
+   server-rejection shapes still caught. `src/watch.ts` + 3 tests (226/226).
+   npm publish is now unblocked on this axis.
 2. **`watch` v2 — multi-target** (`Target.setAutoAttach{flatten:true}` +
    per-`sessionId` routing; browser-use's HAR watchdog is the reference, see
    WATCH-PLAN.md §2/§6). This catches popup/iframe checkout (Stripe iframe) AND
@@ -173,4 +175,6 @@ for real-site runs).
   and fail-safe. When in doubt, `inconclusive`, never a false accusation.
 - **No LLM judge.** The verdict is deterministic; a model may only ever explain.
 - **`dist/` committed** → build before commit.
-- **npm publish is PAUSED** until the verdict is proven on real sites (#1).
+- **npm publish** was paused pending the real-site verdict (#1); that gate PASSED
+  2026-09-18 (run #4, cry-wolf 0/20 through observe mode). Still do the README
+  benchmark reconciliation (#5) before actually publishing.

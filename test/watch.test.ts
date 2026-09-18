@@ -44,12 +44,22 @@ describe("truefact watch: passive network-truth verdicts", () => {
       if (req.method === "POST" && req.url === "/declined") return res.writeHead(402, j).end('{"error":"declined"}');
       if (req.method === "POST" && req.url === "/gql-err") return res.writeHead(200, j).end('{"data":null,"errors":[{"message":"no"}]}');
       if (req.method === "POST" && req.url === "/flaky") return res.writeHead(flaky++ === 0 ? 500 : 200, j).end("{}");
+      if (req.method === "POST" && req.url === "/forbidden") return res.writeHead(403, j).end('{"error":"auth"}');
+      // a 2xx whose body load then fails: send 200 + a longer content-length than
+      // the bytes written, then destroy the socket → responseReceived 200 then
+      // Network.loadingFailed (the canceled-beacon shape from real sites).
+      if (req.method === "POST" && req.url === "/truncate") { res.writeHead(200, { "content-type": "application/json", "content-length": "100" }); res.write("{}"); setTimeout(() => res.socket?.destroy(), 120); return; }
+      // a genuine pre-response wire failure: kill the socket before any headers.
+      if (req.method === "POST" && req.url === "/reset") return res.socket?.destroy();
       const html =
         req.url === "/optimistic" ? page("try{await fetch('/submit',{method:'POST'})}catch(e){}")
         : req.url === "/clean" ? page("await fetch('/ok',{method:'POST'})")
         : req.url === "/declined-page" ? page("try{await fetch('/declined',{method:'POST'})}catch(e){}")
         : req.url === "/gql" ? page("try{await fetch('/gql-err',{method:'POST',headers:{'content-type':'application/json'},body:'{}'})}catch(e){}")
         : req.url === "/retry" ? page("try{await fetch('/flaky',{method:'POST'})}catch(e){};await fetch('/flaky',{method:'POST'})")
+        : req.url === "/forbidden-page" ? page("try{await fetch('/forbidden',{method:'POST'})}catch(e){}")
+        : req.url === "/truncate-page" ? page("try{await fetch('/truncate',{method:'POST'})}catch(e){}")
+        : req.url === "/reset-page" ? page("try{await fetch('/reset',{method:'POST'})}catch(e){}")
         : req.url === "/xorigin" ? page(`try{await fetch('${thirdBase}/boom',{method:'POST'})}catch(e){}`)
         : page("");
       res.writeHead(200, { "content-type": "text/html" }).end(html);
@@ -118,6 +128,25 @@ describe("truefact watch: passive network-truth verdicts", () => {
     const o = await run("retry");
     assert.ok(!o.some((w) => w.verdict === "did-not-land"), "a recovered retry must not accuse");
     assert.ok(o.some((w) => w.verdict === "landed"));
+  });
+
+  // Cry-wolf tightenings from the real-site experiment (run #4). Passive observe
+  // mode must not accuse on pervasive same-origin BACKGROUND traffic.
+  it("cry-wolf: a 403 auth failure on a write is NOT accused (background JWT probe)", async () => {
+    const o = await run("forbidden-page");
+    assert.ok(!o.some((w) => w.verdict === "did-not-land"), "401/403 auth must not cry wolf in passive mode");
+  });
+
+  it("cry-wolf: a 2xx whose body load is then canceled is landed, not did-not-land (beacon abort)", async () => {
+    const o = await run("truncate-page");
+    assert.ok(!o.some((w) => w.verdict === "did-not-land"), "server accepted (2xx) → a canceled body load must not accuse");
+    assert.equal(o.at(-1)?.verdict, "landed");
+  });
+
+  it("preserved: a genuine pre-response wire failure on a write still → did-not-land", async () => {
+    const o = await run("reset-page");
+    assert.equal(o.at(-1)?.verdict, "did-not-land");
+    assert.equal(o.at(-1)?.status, null);
   });
 
   it("bodyErrors: a 200 whose body is a GraphQL error → did-not-land", async () => {

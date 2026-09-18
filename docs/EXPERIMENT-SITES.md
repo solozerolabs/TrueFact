@@ -195,3 +195,102 @@ never a cry-wolf (net was `[]`).
    a different mechanism than the sidecar. Worth noting in the roadmap.
 3. Status-based detection (5xx, 4xx-write, `apiOrigins`) is unaffected by the
    body-read ceiling — those ride `responseReceived`, which always arrives.
+
+## Run #4 — the real-site cry-wolf experiment, through `truefact watch`, 2026-09-18
+
+THE launch gate (PLAN.md §8, HANDOFF #1): drive `truefact watch` itself — observe
+mode, wrapping nothing — against real sites and controllable ground truth, score
+verdict vs truth, and specifically measure the residual risk the devil's-advocate
+flagged: a one-off **same-origin background** mutating failure (token-refresh 401,
+a canceled analytics beacon) that passive mode can't tie to an intent and would
+false-fire `did-not-land`. Two parts, both run against the tightened build.
+
+### Part A — confusion matrix on controllable ground truth (`_run-crywolf-matrix.mjs`)
+
+A local page (its own origin) issues one POST per case; watch attached with
+`--api-origins` for the external write hosts (the realistic split-origin config).
+Truth = each endpoint's known contract. `bodyErrors` off (default).
+
+| truth | watch verdict | case | cell |
+|---|---|---|---|
+| landed | landed | local 200 (same-origin success) | OK |
+| did-not-land | did-not-land | local 500 (same-origin crash) | OK (real catch) |
+| landed | landed | httpbin `/post` 200 | OK |
+| did-not-land | did-not-land | httpbin 500 | OK |
+| did-not-land | did-not-land | httpbin 402 (declined) | OK |
+| did-not-land | did-not-land | httpbin 422 (invalid) | OK |
+| did-not-land | did-not-land | httpbin 429 (throttled) | OK |
+| did-not-land | did-not-land | httpbin 403 (forbidden, CORS-blocked cross-origin) | OK |
+| did-not-land | **landed** | jsonplaceholder 201 (fake-persist) | **false-landed — network-invisible** |
+| — | (silent) | reqres 201 | dropped: reqres now key-gates the write |
+
+**Matrix score:** correct 8/10 · **cry-wolf (false did-not-land): 0** · false-landed:
+1, and that one is the fake-persist boundary from run #3 (a clean 2xx that simply
+never persists — invisible to *any* network read; only a post-write read-back can
+catch it, a different mechanism than the sidecar). Every real server-rejection
+shape (5xx, 4xx-on-write, cross-origin failure) is caught.
+
+### Part B — residual cry-wolf on 20 real sites, DEFAULT config (`_run-crywolf-real.mjs`)
+
+20 popular sites (HN, Wikipedia, GitHub, MDN, Stack Overflow, Reddit, NYT, CNN,
+Amazon, YouTube, npm, Vercel, Stripe, Cloudflare, BBC, The Verge, Medium, Airbnb,
+Shopify, LinkedIn), all loaded, default watch config (page-origin only, no
+`--api-origins`, `bodyErrors` off). The "agent" load+scroll+waits — **no
+intentional writes** — so every same-origin mutating verdict watch emits is
+BACKGROUND traffic, and any `did-not-land` is by construction a cry-wolf.
+
+Real sites emit a LOT of same-origin background POSTs (telemetry, RUM,
+challenge-platform, tracking beacons): ~57–61 per 20-site pass.
+
+**First pass exposed 3 false `did-not-land` (3/20 sites, ~5% of verdicts) — NON-trivial:**
+
+| site | request | status | mechanism |
+|---|---|---|---|
+| vercel.com | `POST /api/jwt` | 403 | same-origin auth/JWT probe for a logged-out visitor — the pure devil's-advocate case |
+| theverge.com | `POST /metrics/…` | 204 | analytics beacon **canceled by navigation** (2xx header seen, then `loadingFailed`) |
+| linkedin.com | `POST /li/track` | 200 | tracking beacon **canceled by navigation** (2xx header seen, then `loadingFailed`) |
+
+### The tightening (observe mode only — `src/watch.ts`)
+
+Passive mode has no `act()` bracket to attribute a failure to intent, so its
+`did-not-land` is now deliberately narrower than wrapped mode's (wrapped/sidecar
+keeps its sharp full-4xx classification — it has the causal bracket that earns
+0/279). Two exclusions, each tied to a real case above:
+
+1. **Auth 401/403 excluded** (`isPassiveWriteError`): a same-origin background
+   JWT/token probe returning 403 is pervasive on logged-out pages. A genuinely
+   forbidden intended write becomes a MISS here, never a false accusation.
+2. **A `loadingFailed` after a 2xx is `landed`, not `did-not-land`**: the server
+   already accepted the write; a later body-load failure is a canceled/aborted
+   beacon (navigation, `sendBeacon`), not a failed write. Only a wire failure with
+   **no** response (`status == null`) is still a failed write.
+
+Hermetic proof in `test/watch.test.ts` (3 new cases): a 403 write is not accused;
+a 2xx-then-canceled body is `landed`; a genuine pre-response socket reset still
+→ `did-not-land`. Suite 226/226.
+
+### Re-run against the tightened build — the gate result
+
+| | before | after |
+|---|---|---|
+| sites loaded | 20/20 | 20/20 |
+| same-origin mutating verdicts | 57 | 61 |
+| **false `did-not-land` (cry-wolf)** | **3** | **0** |
+
+**Verdict: GATE PASSED.** Through `truefact watch`, in pure observe mode: cry-wolf
+0 on both the controllable matrix and 20 real sites; every real server-rejection
+shape still caught; the sole false-landed is the known fake-persist ceiling. The
+crown-jewel 0-false-did-not-land record holds in observe mode. This unblocks npm
+publish (PLAN.md §8/§9).
+
+**Scope / honesty (what this run does and does not cover):**
+- Intentional-write scoring used the controllable matrix (Part A), not live
+  logged-in flows — real logged-in writes are real side effects with no cleanly
+  knowable truth (the matrix's ethics rule). Part B measures exactly the surface
+  the devil flagged: same-origin *background* mutating failures.
+- `bodyErrors` on the Playwright-driven path stays best-effort (run #3 ceiling);
+  unchanged here.
+- Fake-persist (clean 2xx that never persists) remains a false-landed — needs a
+  post-write read-back, a different mechanism. Documented, not a `watch` defect.
+- Stripe/GitHub cross-origin-iframe & credentialed rows still need v2 multi-target
+  (HANDOFF #2) before they can be scored; out of scope for the gate.

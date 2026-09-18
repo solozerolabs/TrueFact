@@ -5,9 +5,15 @@
 // v1 is the NETWORK-TRUTH floor, and only the floor (docs/WATCH-PLAN.md): per
 // mutating request (POST/PUT/PATCH/DELETE) on a WATCHED origin it emits one
 // verdict from the already-certified sidecar classification —
-//   did-not-land : the server rejected the write (5xx / 4xx-on-write / wire
-//                  failure / opt-in error-body), after retry-collapse
-//   landed       : the server accepted it (clean 2xx)
+//   did-not-land : the server rejected the write (5xx / 4xx-on-write except
+//                  401/403 auth / pre-response wire failure / opt-in error-body),
+//                  after retry-collapse
+//   landed       : the server accepted it (clean 2xx, incl. a 2xx whose body load
+//                  was later canceled — a navigated/beacon abort, not a failure)
+// The two exclusions (auth 4xx, 2xx-then-cancel) come from the real-site cry-wolf
+// experiment (docs/EXPERIMENT-SITES.md run #4): both are pervasive same-origin
+// BACKGROUND traffic that would false-fire in passive mode. See isPassiveWriteError
+// and the loadingFailed handler below.
 // It does NOT reconstruct a DOM bracket or a boundary, so it never renders the
 // DOM/validation verdict that needs a causal `before` — that path (and its own
 // cry-wolf proof on real sites) is deferred. Passive attribution keeps
@@ -48,6 +54,16 @@ export interface WatchSession {
   settle(): Promise<void>;
   close(): Promise<void>;
 }
+
+// Observe mode has no act() bracket to tie a failure to the agent's intent, so
+// its passive did-not-land is deliberately narrower than wrapped mode's: auth
+// failures (401/403) are excluded — pervasive as background token/JWT probes on
+// logged-out pages (real-site cry-wolf experiment: vercel POST /api/jwt 403 cried
+// wolf). A genuinely forbidden write is a MISS here, never a false accusation;
+// wrapped mode (with a causal bracket) keeps the sharp full-4xx classification.
+const PASSIVE_AUTH_SKIP = new Set([401, 403]);
+const isPassiveWriteError = (status: number, method: string): boolean =>
+  isWriteError(status, method) && !PASSIVE_AUTH_SKIP.has(status);
 
 const pathOf = (u: string): string => {
   try {
@@ -157,7 +173,7 @@ export async function startWatch(opts: WatchOptions): Promise<WatchSession | nul
     if (!rec || !MUTATING.has(rec.method.toUpperCase()) || !watched(rec.url)) return;
     reqOf.delete(p.requestId as string);
     const status = rec.status ?? 0;
-    if (isWriteError(status, rec.method)) return finalize(rec, "did-not-land", "network-error");
+    if (isPassiveWriteError(status, rec.method)) return finalize(rec, "did-not-land", "network-error");
     if (bodyRe && status >= 200 && status < 300) return readBodyThen(p.requestId as string, rec);
     finalize(rec, "landed", "network-ok");
   });
@@ -165,7 +181,14 @@ export async function startWatch(opts: WatchOptions): Promise<WatchSession | nul
     const rec = reqOf.get(p.requestId as string);
     if (!rec || !MUTATING.has(rec.method.toUpperCase()) || !watched(rec.url)) return;
     reqOf.delete(p.requestId as string);
-    finalize(rec, "did-not-land", "network-error"); // wire failure on a write
+    // A loadingFailed AFTER a 2xx response is a canceled/aborted body load
+    // (navigation, sendBeacon) — the server already accepted the write, so this
+    // is not a failure. Real-site experiment: theverge POST /metrics (204) and
+    // linkedin POST /li/track (200) cried wolf here when navigation canceled the
+    // in-flight beacon. Only a wire failure with NO response is a failed write.
+    const status = rec.status ?? 0;
+    if (status >= 200 && status < 300) return finalize(rec, "landed", "network-ok");
+    finalize(rec, "did-not-land", "network-error"); // genuine wire failure before any response
   });
 
   await conn.cmd("Page.enable");
