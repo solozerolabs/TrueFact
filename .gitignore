@@ -12,7 +12,6 @@ bench/out/*
 !bench/out/oracle.jsonl
 bench/showcase/*
 !bench/showcase/showcase.md
-.truereplay/
 demo-run.jsonl
 
 # local experiment scratch

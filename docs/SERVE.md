@@ -20,6 +20,9 @@ rides into the run transcript as evidence the model cannot fake.
      `{"i":<id>,"m":<method>,"p":<params>}`; you reply `{"i":<id>,"r":<result>}`
      (or `{"i":<id>,"x":"<error>"}`) and push events as `{"e":<method>,"p":<params>}`,
      one JSON object per line. Reads AND network events share this one channel.
+     Note: this is TrueFact's own newline-JSON bridge, **not** Chrome's
+     `--remote-debugging-pipe` (that speaks raw CDP on fds 3/4, NUL-delimited).
+     They are not wire-compatible; the peer proxies into a CDP session it owns.
    - **`--port <N>` (debug-port mode).** Launch Chrome with
      `--remote-debugging-port=<N>`; serve attaches a WebSocket CDP client itself.
      Simpler, but the port is reachable by any same-UID process — use only where

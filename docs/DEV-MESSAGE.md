@@ -10,6 +10,6 @@ New this week: `truefact watch`. Point it at any Chrome with a debug port. It ve
 
 The number we protect first is false halts. A verifier that stops a good run is worse than useless. Across a 520-write benchmark over four models, TrueFact raised zero false halts, 0 out of 279. In observe mode, `watch` held the same line across 20 live sites, background telemetry and all. Still zero.
 
-We are honest about the other axis. Recall, catching every lie a page tells, is harder, and that number is still being measured. TrueFact is precision-first by design. It would rather say inconclusive than call a good run bad.
+We are honest about the price. To hold zero false halts, TrueFact returns inconclusive on ~14% of good writes rather than guess. It is precision-first by design: it would rather say inconclusive than call a good run bad. Declare a postcondition (`expect`, including a `probe` against your server) on the writes that matter and most of that inconclusive turns into a real landed / did-not-land.
 
-Install from git, no build step. It runs today with Stagehand 4.x. Playwright is next.
+Runs today with Stagehand 4.x and Playwright. Install from npm, or from git (a `prepare` step builds it).

@@ -4,20 +4,21 @@
 
 <img src="demo/truefact-demo.gif" alt="TrueFact catching an optimistic-UI failure: the agent reported success, the server returned 500, truefact assert exits 1">
 
-Across a 520-write benchmark, four models from weak to strong, agents reported success on 46% of writes that never landed. The rate did not fall as the model got stronger: haiku 46%, sonnet 46%, opus 46%, a local model 46%. A better agent does not lie less.
+On a 520-write trap benchmark, four models from weak to strong, the Stagehand framework reported the click as *done* on every write — including the 46% that never landed. The models' own confidence was better but still wrong 14–25% of the time (haiku 25%, the rest 14%). TrueFact caught every failed write (0 of 60 missed on each rung) and never once halted a good run (0 of 279).
 
-| Failed writes left undetected |     |
-|-------------------------------|-----|
-| Agent alone (any model)       | 46% |
-| With TrueFact                 | 0%  |
+| Failed writes left undetected            |        |
+|------------------------------------------|--------|
+| Framework's mechanical claim ("I clicked")| 46%    |
+| The model's own belief                    | 14–25% |
+| With TrueFact                             | 0%     |
 
-That is 0 of 60 failed writes missed on each rung, with 0 of 279 good writes wrongly halted. The verdict is a deterministic read of the page and the network, not a model grading a model. No second LLM, no extra tokens, no added cost. Full method and confidence bounds: [bench/out/report.md](bench/out/report.md).
+The safety has a price, stated up front: TrueFact returns **inconclusive** on ~14% of *good* writes rather than guess (see [What "inconclusive" means](#what-inconclusive-means)). The verdict is a deterministic read of the page and the network, not a model grading a model — no second LLM, no extra tokens, no added cost. This is a trap ladder we wrote; treat 46% as "the framework's success flag is not evidence," not a law about models. Full method and confidence bounds: [bench/out/report.md](bench/out/report.md).
 
 TrueFact wraps your browser agent. After every action it reads the live page itself, and the network under it. Then it returns an independent verdict: **landed / did-not-land / inconclusive**. It never trusts what the agent claims. The gap between "agent said done" and "the world says done" is the whole product.
 
 - **Silent failures caught.** A click that lands on a cookie overlay. A form that quietly rejected. A page that shows success while the server returned 500. The agent reports all of these as done. TrueFact doesn't.
 - **Not another LLM judge.** The verdict is a deterministic read of the page and the network, not a model grading a model. Sub-second, no extra tokens.
-- **A receipt, not a log.** Every step is recorded on a tamper-evident chain. You can replay it, assert against it offline, and verify it.
+- **An integrity-checked record.** Every step is recorded on a hash chain, so you can replay it, assert against it offline, and detect edits. It is *tamper-evident* only when you sign it (`--pubkey`); unsigned, it catches accidental corruption and partial edits, not a full recompute by whoever holds the file.
 
 ## Quickstart
 
@@ -104,13 +105,14 @@ await tr.act("click 'Place order'", {
 
 `probe` is the out-of-band check for optimistic UI that a page read can't beat. TrueFact GETs a status endpoint itself and matches real server state. A broken or unreachable endpoint reads `inconclusive`, never a false alarm.
 
-## Prove the record wasn't touched
+## Check the record wasn't edited
 
 ```bash
-truefact verify run.jsonl     # recomputes the hash chain, exits 1 at the first break
+truefact verify run.jsonl                 # recomputes the hash chain, exits 1 at the first break
+truefact verify run.jsonl --pubkey k.pem  # also checks the ed25519 signature (tamper-evident)
 ```
 
-Every step commits to the one before it, including what the agent claimed. Alter a field, drop a step, or reorder two, and verification fails at that point.
+Every step commits to the one before it, including what the agent claimed. Alter a field or reorder two and verification fails at that point. Two honest limits when the run is **unsigned**: dropping steps off the *end* leaves a shorter-but-valid chain, and anyone holding the file can recompute the whole thing. Sign the run (`launch({ signingKey })` or `TRUEFACT_SIGNING_KEY`) and `verify --pubkey` to close both.
 
 ## Bring your own browser
 
@@ -162,7 +164,17 @@ const tr = withTrueFact(stagehand, { redactFields: ["ssn", /card/] }); // values
 
 ## Does it cry wolf?
 
-A verifier that halts a good run is worse than useless. This is the number TrueFact protects first. Across a 520-write benchmark spanning four models weak to strong, it raised **zero false halts (0/279)**. The verdict reads the page, so it's the same whoever drives. In pure observe mode, `truefact watch` held the same line: **zero false halts across 20 live sites** (docs/EXPERIMENT-SITES.md run #4), background telemetry and all. Recall is measured on that same benchmark and shown at the top. The one gap no network read can close is a clean success that never persists on the server. The network floor and `probe` are the out-of-band checks aimed at the worst case: a page that shows success over a write that failed. Full method and numbers: [docs/BUSINESS.md](docs/BUSINESS.md), [bench/out/report.md](bench/out/report.md).
+A verifier that halts a good run is worse than useless. This is the number TrueFact protects first. Across the 520-write benchmark spanning four models weak to strong, it raised **zero false halts (0/279)**. The verdict reads the page, so it's the same whoever drives. In pure observe mode, `truefact watch` held the same line: **zero false halts across 20 live sites** (docs/EXPERIMENT-SITES.md run #4), background telemetry and all. Recall is measured on that same benchmark and shown at the top. The one gap no network read can close is a clean success that never persists on the server. The network floor and `probe` are the out-of-band checks aimed at the worst case: a page that shows success over a write that failed. Full method and numbers: [bench/out/report.md](bench/out/report.md).
+
+## What "inconclusive" means
+
+Zero false halts costs coverage: on the same benchmark, ~14% of *good* writes came back **inconclusive** rather than `landed`. TrueFact says `inconclusive` when the page changed in a way it can't read as success and no network write confirmed it — it will not guess `landed`. So a run's three outcomes mean:
+
+- **`landed`** — the page and/or the server confirmed the write. Proceed.
+- **`did-not-land`** — a mechanism said it failed (server 5xx/4xx-on-write, a corroborated validation error, an unmet declaration). Stop; the write is not there.
+- **`inconclusive`** — TrueFact couldn't tell. **Do not blindly retry** (the write may have landed). Either declare what "landed" means for that action (`expect: [...]`, including a `probe` against your server), or check by hand.
+
+Most `inconclusive` verdicts disappear once you declare a postcondition on the writes that matter.
 
 ## The rule
 
