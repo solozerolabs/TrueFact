@@ -55,6 +55,8 @@ export {
 export { verifyChain, hashStep, canonical, makeSigner, verifyHashSig, type ChainResult } from "./chain.js";
 export { renderHtml, viewFile } from "./view.js";
 export { launch, type LaunchOptions, type Launched } from "./launch.js";
+export { stagehandDriver, stagehandReader, type Driver, type PageReader } from "./driver.js";
+export { playwrightDriver, playwrightReader, axToLines } from "./driver-playwright.js";
 export { summarizeRun, rollupRuns, type RunSummary, type FleetSummary } from "./fleet.js";
 export type StepKind = "write" | "read" | "nav";
 
@@ -436,7 +438,10 @@ export function withReplay(source: Stagehand | Driver, opts: ReplayOptions = {})
       verdict,
       evidence: { before: beforeState!.fp, after: decision.after.fp, settled, session, postcondition: post, ...(screenshot ? { screenshot } : {}) },
       attempt,
-      agent_claim: data ? { success: !!data.success, message: data.message ?? "" } : null,
+      // Only a driver that self-reports (Stagehand's ActResult carries `success`)
+      // gets a sealed claim. A Playwright write has actions but no claim, so it
+      // degrades to null — we never fabricate one to keep the narrative.
+      agent_claim: data && "success" in data ? { success: !!data.success, message: data.message ?? "" } : null,
       cost,
       timestamp: new Date().toISOString(),
     });

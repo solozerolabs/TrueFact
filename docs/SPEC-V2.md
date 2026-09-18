@@ -76,7 +76,7 @@ Attach a second Chrome DevTools Protocol session to the browser the agent is dri
 
 What it gives:
 - `Network.responseReceived` for every fetch the page makes → optimistic UI (page ✅, server 500) becomes catchable with **no declaration**. The 40/40 miss column goes to zero.
-- `DOM.getDocument` / `Runtime.evaluate` for before/after snapshots → the same reader for Stagehand, Playwright, Browser-Use, Browserbase sessions, anything that drives Chrome.
+- `DOM.getDocument` / `Runtime.evaluate` for before/after snapshots → a uniform read *seam* (`PageReader`) behind which every driver plugs in. (M7 finding: Stagehand walls off raw CDP, so it keeps its native tree; Playwright reads over CDP. Per-driver readers, one classifier — see docs/M7-PLAN.md.)
 - Independence by construction: the verdict process is a different client. The framework cannot touch it.
 
 **M0 result** (`scripts/m0-sidecar.mjs`, run it to reproduce): a second CDP client attached to a Stagehand-launched Chrome observed `POST /submit → 500` while the page it drove displayed `✅ Order placed`. What made it work, and what to reuse in M2:
@@ -186,7 +186,7 @@ One static HTML file that loads a JSONL. Left: intent, verdict, assertion result
 | M4 | ✅ **DONE 2026-09-17** — `truereplay view <run.jsonl>` writes a standalone HTML timeline (`<run>.html`) beside the run and opens it (`TRUEREPLAY_NO_OPEN` skips the open for CI/headless). Left: steps + verdict badges; right: reason, a11y tree diff (added/removed), network errors, field, screenshot, and the agent's claim shown separately as the untrusted channel. Auto-selects the first non-`landed` write. `src/view.ts`, `renderHtml`/`viewFile` re-exported, 185 tests. No server, no build step, self-contained. `</script>` in data is neutralized. | M1 | 1 d |
 | M5 | Resume from checkpoint | M2 | 1 d |
 | M6 | ✅ **DONE 2026-09-17 (number + gate slice)** — `rollupRuns` (pure, true landed rate from verdicts), `truereplay fleet <run.jsonl...>` (prints landed/did-not-land rate + which runs need review), `truereplay gate <...> [--max-did-not-land 0.05]` (CI exit code). `src/fleet.ts`, 198 tests. **Deferred:** multi-file HTML fleet header and compare-by-tag (needs a run tag = a new user concept) — until a user wants the visual/grouping. Canary halt stays a CI exit code; a runtime hook waits for demand. | M1 | 1 d |
-| M7 | Second driver (Playwright or Browser-Use) on the same reader | M2 | 1 d |
+| M7 | ✅ **DONE 2026-09-17** — driver seam (`PageReader`/`Driver`, Phase 0) + `playwrightDriver`/`playwrightReader` (Phase 2), tree via CDP `getFullAXTree`→`axToLines`, claim honestly null. Phase 1 (migrate Stagehand onto CDP) **dropped**: Stagehand exposes no raw CDP, so per-driver readers. Redaction gate (Phase 1.5) folded in. 202 tests. See docs/M7-PLAN.md. | M0 | 1 d |
 | M8 | HTTP + MCP recorders + their assertion slots | M1, M3 | 1.5 d |
 | M9 | ✅ **DONE 2026-09-17 (signing slice)** — ed25519 `sig` over each step's hash when `signingKey`/`TRUEREPLAY_SIGNING_KEY` is set; `verifyChain(steps, { publicKey })` and `truereplay verify --pubkey <key.pem>` check integrity AND signature. `src/chain.ts` (`makeSigner`/`verifyHashSig`), 198 tests incl. a real signed run through `launch()`. Off by default; the hash chain alone still detects tamper. **Deferred:** chain-status badge in `view`, and S3/HTTPS sinks (a jsonl file is already a sink) — until asked. | M1 | 0.5 d |
 

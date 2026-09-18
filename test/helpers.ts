@@ -60,6 +60,28 @@ export function withBrowser() {
   };
 }
 
+/** One headless Chromium via playwright-core (devDep), for the Playwright
+ *  driver's integration test. A fresh context+page per call. */
+export function withPlaywrightBrowser() {
+  let browser: { newContext(): Promise<{ newPage(): Promise<unknown> }>; close(): Promise<void> } | null = null;
+  return {
+    async page(): Promise<never> {
+      if (!browser) {
+        const { chromium } = (await import("playwright-core")) as unknown as {
+          chromium: { launch(o: { headless: boolean }): Promise<typeof browser> };
+        };
+        browser = await chromium.launch({ headless: true });
+      }
+      const ctx = await browser!.newContext();
+      return (await ctx.newPage()) as never;
+    },
+    async stop(): Promise<void> {
+      await browser?.close();
+      browser = null;
+    },
+  };
+}
+
 /** Build a PageState for pure unit tests. `state({ href })` is the common case. */
 export function state(over: Partial<PageState> & { href?: string } = {}): PageState {
   const { href, ...rest } = over;
