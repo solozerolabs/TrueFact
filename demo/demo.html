@@ -28,6 +28,7 @@
   .hidden { display:none; }
   .tag { margin-top:18px; color:var(--dim); font-size:15px; }
   .tag b { color:var(--accent); font-weight:600; }
+  .tag .v { color:var(--red); }
 </style>
 <div class="term">
   <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
@@ -49,8 +50,8 @@ const steps = [
   { t:120,  html:'<span class="amber">1/3 write steps pass  (2 failed)</span>' },
   { t:600,  html:'<span class="prompt">$</span> echo $?' },
   { t:250,  html:'<span class="red">1</span>  <span class="dim"># non-zero → the CI gate blocks the merge</span>' },
-  { t:900,  html:'<div class="tag">The page showed <b>✅</b>. The server returned <b>500</b>. '
-                +'TrueFact caught it — no LLM, no flaky retries.</div>' },
+  { t:900,  html:'<div class="tag">The agent claimed success. TrueFact checked the server and disagreed: '
+                +'<b class="v">did-not-land</b>. Caught with no LLM, no flaky retries.</div>' },
 ];
 const body = document.getElementById('body');
 const wait = ms => new Promise(r => setTimeout(r, ms));
