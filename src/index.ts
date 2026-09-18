@@ -24,6 +24,7 @@ import {
 } from "./postcondition.js";
 import { attachSidecar, type Sidecar } from "./sidecar.js";
 import { hashStep, makeSigner } from "./chain.js";
+import { stagehandDriver, type Driver, type PageReader } from "./driver.js";
 import {
   applyDeclarations,
   checkDeclarations,
@@ -126,7 +127,7 @@ export interface Wrapped {
   act(instruction: string | Action, options?: ActOptions): Promise<ActResult>;
   extract: Stagehand["extract"];
   observe: Stagehand["observe"];
-  page: { goto(url: string, opts?: unknown): Promise<unknown>; current(): Promise<Page> };
+  page: { goto(url: string, opts?: unknown): Promise<unknown>; current(): Promise<PageReader> };
   replay: Replay;
   close(): Promise<void>; // release the network sidecar (no-op when network is off)
 }
@@ -167,7 +168,6 @@ class ReplayImpl implements Replay {
 const actionText = (a: unknown): string => (typeof a === "string" ? a : JSON.stringify(a));
 const statusOf = (r: unknown): number | null =>
   r && typeof (r as { status?: () => number }).status === "function" ? (r as { status: () => number }).status() : null;
-const pageId = (p: Page) => (p as unknown as { pageId?: string }).pageId;
 
 const costOf = (claim: unknown, model: string | null): Step["cost"] => {
   const u = (claim as { metadata?: { usage?: Record<string, number> } })?.metadata?.usage;
@@ -202,8 +202,8 @@ const nonGrounding = (): Grounding => ({ verdict: "inconclusive", reason: "non-g
  *  (`options.page` may target a non-active tab). Redact any absent leaf that is
  *  the length of a masked password run — the only case a returned value could
  *  be a secret the tree did not already mask. */
-async function groundExtract(active: Page, extractOpts: StagehandClientExtractOptions | undefined, claim: unknown): Promise<Grounding> {
-  const target = ((extractOpts?.page as Page | undefined) ?? active);
+async function groundExtract(active: PageReader, extractOpts: StagehandClientExtractOptions | undefined, claim: unknown, driver: Driver): Promise<Grounding> {
+  const target = extractOpts?.page ? driver.readerFor(extractOpts.page) : active;
   const tree = await readTree(target);
   if (!tree) return nonGrounding();
   const g = groundValues((claim as { data?: unknown })?.data, tree);
@@ -227,7 +227,10 @@ function redactStep(step: Step): Step {
   return step;
 }
 
-export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrapped {
+export function withReplay(source: Stagehand | Driver, opts: ReplayOptions = {}): Wrapped {
+  // Accept a Stagehand (wrap it) or a ready Driver (Phase 2 drivers pass one).
+  const driver: Driver =
+    "activePage" in source && "readerFor" in source ? (source as Driver) : stagehandDriver(source as Stagehand);
   const screenshotDir = opts.screenshotDir ?? ".truereplay/screenshots";
   const defaultWait = opts.waitMs ?? 5000;
   if (opts.jsonl) mkdirSync(dirname(opts.jsonl), { recursive: true });
@@ -249,12 +252,7 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
     if (opts.jsonl) appendFileSync(opts.jsonl, JSON.stringify(clean) + "\n");
   };
 
-  const activePage = async (): Promise<Page> => {
-    const ctx = stagehand.browser.context;
-    const page = (await ctx.activePage()) ?? (await ctx.pages())[0];
-    if (!page) throw new Error("TrueReplay: no active page on the Stagehand browser context");
-    return page;
-  };
+  const activePage = (): Promise<PageReader> => driver.activePage();
 
   // Attach the network sidecar once, lazily. Network.enable is persistent, so
   // enabling it here (before the first write's click) covers every later write.
@@ -274,7 +272,7 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
     return { declared, verdict };
   });
 
-  async function snap(page: Page): Promise<string | undefined> {
+  async function snap(page: PageReader): Promise<string | undefined> {
     if (opts.screenshots === false) return undefined;
     try {
       const bytes = await page.screenshot();
@@ -291,7 +289,7 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
   async function run(
     kind: StepKind,
     action: string,
-    invoke: (page: Page) => Promise<unknown>,
+    invoke: () => Promise<unknown>,
     declared: { expect?: Declaration | Declaration[]; waitMs?: number; model?: string | null; ground?: boolean; extractOpts?: StagehandClientExtractOptions } = {},
   ): Promise<unknown> {
     const decls = validateDeclarations(declared.expect); // fail fast, before the write
@@ -309,15 +307,15 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
     let claim: unknown = null;
     let threw: unknown = null;
     try {
-      claim = await invoke(beforePage);
+      claim = await invoke();
     } catch (e) {
       threw = e;
     }
 
     // Re-resolve the active page: a click can open/switch to a new tab (§5).
-    // activePage() returns a fresh wrapper each call; compare the stable pageId.
+    // activePage() returns a fresh reader each call; compare the stable id.
     const page = await activePage();
-    const pageSwitched = pageId(page) !== pageId(beforePage);
+    const pageSwitched = page.id !== beforePage.id;
     const { settled } = await settle(page);
     const cost = costOf(claim, declared.model ?? null);
 
@@ -329,7 +327,7 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
       const grounding =
         kind === "read"
           ? declared.ground && !threw
-            ? await groundExtract(page, declared.extractOpts, claim)
+            ? await groundExtract(page, declared.extractOpts, claim, driver)
             : nonGrounding()
           : undefined;
       record({
@@ -402,17 +400,17 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
   return {
     act: (instruction, options) => {
       const { expect, waitMs, ...rest } = options ?? {};
-      return run("write", `act: ${actionText(instruction)}`, () => stagehand.act(instruction as string, rest), { expect, waitMs, model: modelName(rest) }) as Promise<ActResult>;
+      return run("write", `act: ${actionText(instruction)}`, () => driver.act(instruction, rest), { expect, waitMs, model: modelName(rest) }) as Promise<ActResult>;
     },
     extract: ((...args: unknown[]) => {
       const extractOpts = extractOptionsOf(args);
-      return run("read", `extract: ${actionText(args[0])}`, () => (stagehand.extract as (...a: unknown[]) => Promise<unknown>)(...args), { model: modelName(extractOpts), ground: true, extractOpts });
+      return run("read", `extract: ${actionText(args[0])}`, () => driver.extract(...args), { model: modelName(extractOpts), ground: true, extractOpts });
     }) as Stagehand["extract"],
     observe: ((...args: unknown[]) =>
-      run("read", `observe: ${actionText(args[0])}`, () => (stagehand.observe as (...a: unknown[]) => Promise<unknown>)(...args), { model: modelName(args[1]) })) as Stagehand["observe"],
+      run("read", `observe: ${actionText(args[0])}`, () => driver.observe(...args), { model: modelName(args[1]) })) as Stagehand["observe"],
     page: {
       goto: (url: string, gotoOpts?: unknown) =>
-        run("nav", `goto ${url}`, (p) => (p.goto as (u: string, o?: unknown) => Promise<unknown>)(url, gotoOpts)),
+        run("nav", `goto ${url}`, () => driver.goto(url, gotoOpts)),
       current: activePage,
     },
     replay,

@@ -3,7 +3,7 @@
 // field directly for fill/type/select, and decide a write step's verdict.
 // Pure where it can be: `classify` and `evidenceOf` are functions of two
 // PageStates, unit-testable with no browser. See docs/DAY3.md, docs/DAY4.md §1.
-import type { Page } from "@browserbasehq/stagehand";
+import type { PageReader } from "./driver.js";
 import {
   fingerprint,
   safeRead,
@@ -85,15 +85,11 @@ export function normalizeTree(formattedTree: string): string[] {
     .filter(Boolean);
 }
 
-/** One snapshot → normalized tree lines, or null if the snapshot threw
+/** The reader's normalized tree lines, or null if the snapshot threw
  *  (mid-navigation). The single place `captureState`, `checkDeclarations` and
- *  grounding read the a11y tree. */
-export async function readTree(page: Page): Promise<string[] | null> {
-  try {
-    return normalizeTree((await page.snapshot()).formattedTree);
-  } catch {
-    return null;
-  }
+ *  grounding read the a11y tree — now driver-agnostic via the PageReader. */
+export function readTree(page: PageReader): Promise<string[] | null> {
+  return page.snapshotTree();
 }
 
 /** The page text of one normalized tree line, without its `role:` prefix or
@@ -117,7 +113,7 @@ export function multisetDiff(a: string[], b: string[]): string[] {
   return out;
 }
 
-export async function captureState(page: Page): Promise<PageState> {
+export async function captureState(page: PageReader): Promise<PageState> {
   const fp = (await fingerprint(page)) ?? EMPTY_FP;
   const tree = (await readTree(page)) ?? []; // mid-navigation snapshot can throw; empty tree is a safe read
   const meta =
@@ -177,7 +173,7 @@ export async function captureState(page: Page): Promise<PageState> {
     forms: meta.forms,
     userInvalidCount: meta.userInvalidCount,
     activeField: meta.activeField,
-    pageId: String((page as unknown as { pageId?: string }).pageId ?? ""),
+    pageId: page.id,
   };
 }
 
@@ -313,7 +309,7 @@ export function applyNetwork(current: Verdict, errors: { url: string; status: nu
  * helper calls — see AGENTS.md).
  */
 export async function readTarget(
-  page: Page,
+  page: PageReader,
   selector: string,
 ): Promise<{ found: boolean; value: string; text: string; isPassword: boolean } | null> {
   return safeRead(
@@ -388,7 +384,7 @@ const NON_MUTATING = new Set([
  * comes from a page read. Returns null (fall through to classify) if the read
  * fails for any reason.
  */
-export async function fieldPostcondition(page: Page, action: Action): Promise<FieldResult | null> {
+export async function fieldPostcondition(page: PageReader, action: Action): Promise<FieldResult | null> {
   if (!action.method || !FIELD_METHODS.has(action.method)) return null;
   const expected = action.arguments?.[0] ?? "";
   const res = await readTarget(page, action.selector);
@@ -420,7 +416,7 @@ export async function fieldPostcondition(page: Page, action: Action): Promise<Fi
  * as changed (DAY4 R3).
  */
 export async function pollUntil<T>(
-  page: Page,
+  page: PageReader,
   budgetMs: number,
   probe: (changed: boolean, final: boolean) => Promise<T | null>,
   intervalMs = 250,
@@ -455,7 +451,7 @@ const stricter = (a: Outcome, b: Outcome): Outcome => {
  * the extended no-change budget; pass 0 when a declaration will poll instead.
  */
 export async function decideWrite(
-  page: Page,
+  page: PageReader,
   before: PageState,
   firstAfter: PageState,
   actions: Action[] | null,

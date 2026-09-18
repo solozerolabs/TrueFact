@@ -1,7 +1,7 @@
 // Day 4 — declared postconditions. Data, never callbacks: a callback could read
 // the agent's claim, and no verdict may. Each check is a direct page read,
 // polled read-only until met or the budget ends. See docs/DAY4.md §2–§3.
-import type { Page } from "@browserbasehq/stagehand";
+import type { PageReader } from "./driver.js";
 import { safeRead } from "./session.js";
 import {
   pollUntil,
@@ -64,7 +64,7 @@ export function validateDeclarations(input: Declaration | Declaration[] | undefi
 const matches = (m: string | RegExp, s: string) => (typeof m === "string" ? s.includes(m) : m.test(s));
 
 async function checkOne(
-  page: Page,
+  page: PageReader,
   d: Declaration,
   tree: () => Promise<string[] | null>,
 ): Promise<{ met: boolean | null; actual: string | null; isPassword: boolean }> {
@@ -81,7 +81,7 @@ async function checkOne(
     }
     case "element": {
       try {
-        const count = await page.locator(d.selector).count(); // the one Locator read that never throws on zero
+        const count = await page.count(d.selector); // the one Locator read that never throws on zero
         return { met: d.absent ? count === 0 : count > 0, actual: String(count), isPassword: false };
       } catch {
         return { met: null, actual: null, isPassword: false };
@@ -165,7 +165,7 @@ async function checkOne(
  * Read-only: the write is never re-issued. Password targets are redacted in
  * the returned results (the verdict was computed on the real value).
  */
-export async function checkDeclarations(page: Page, decls: Declaration[], budgetMs: number): Promise<DeclaredResult[]> {
+export async function checkDeclarations(page: PageReader, decls: Declaration[], budgetMs: number): Promise<DeclaredResult[]> {
   const start = Date.now();
   const evaluate = async (): Promise<DeclaredResult[]> => {
     let cached: string[] | null | undefined;

@@ -1,7 +1,7 @@
-// Session-state detection + settle, as pure functions over Stagehand's Page.
+// Session-state detection + settle, as pure functions over a PageReader.
 // Nothing here ever sees the agent's claim. It reads the live page and reports
 // what it sees. See docs/DAY2.md §3-§7.
-import type { Page } from "@browserbasehq/stagehand";
+import type { PageReader } from "./driver.js";
 
 export type Obstruction = "blank" | "captcha" | "login-wall" | "overlay";
 export type Confidence = "high" | "heuristic";
@@ -26,20 +26,20 @@ export interface DetectContext {
   point?: { x: number; y: number }; // the attempt point, for overlay
 }
 
-/** page.evaluate that returns null instead of throwing (mid-navigation, detached). */
+/** reader.evaluate that returns null instead of throwing (mid-navigation, detached). */
 export async function safeRead<T>(
-  page: Page,
+  page: PageReader,
   fn: (arg: unknown) => T,
   arg?: unknown,
 ): Promise<T | null> {
   try {
-    return (await page.evaluate(fn as never, arg as never)) as T;
+    return await page.evaluate(fn, arg);
   } catch {
     return null;
   }
 }
 
-async function currentUrl(page: Page): Promise<string> {
+async function currentUrl(page: PageReader): Promise<string> {
   try {
     return await page.url();
   } catch {
@@ -47,7 +47,7 @@ async function currentUrl(page: Page): Promise<string> {
   }
 }
 
-export async function fingerprint(page: Page): Promise<Fingerprint | null> {
+export async function fingerprint(page: PageReader): Promise<Fingerprint | null> {
   return safeRead(page, () => ({
     href: location.href,
     readyState: document.readyState,
@@ -75,7 +75,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * and so cannot see a navigation that has not committed yet (docs/DAY2.md §3).
  */
 export async function settle(
-  page: Page,
+  page: PageReader,
   budgetMs = 1500,
 ): Promise<{ settled: boolean; after: Fingerprint | null }> {
   let prev = await fingerprint(page);
@@ -111,7 +111,7 @@ const clear = (checked: Obstruction[]): SessionEvidence => ({
 });
 
 export async function detectSession(
-  page: Page,
+  page: PageReader,
   ctx: DetectContext = {},
 ): Promise<SessionEvidence> {
   const checked: Obstruction[] = [];

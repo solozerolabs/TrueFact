@@ -42,8 +42,8 @@ Re-certification is tiny-run, per the standing preference ([[prove-with-tiny-run
 
 ## Phases
 
-**Phase 0 — the seam (zero behavior change).**
-New `src/driver.ts` with `PageReader`/`Driver` and a `stagehandDriver(stagehand)` factory that houses `normalizeTree`, `activePage() ?? pages()[0]`, `pageId`→`id`, `statusOf`, and the `url()`/`waitForLoadState` shims. Type-swap `Page`→`PageReader` through session/postcondition/declaration; route drive ops + goto + activePage through `Driver`. `withReplay(driver, opts)`. `launch()` wraps `stagehandDriver`. **All 198 tests stay green — the Stagehand driver still calls `page.snapshot()`.** This is pure refactor and independently valuable.
+**Phase 0 — the seam (zero behavior change). ✅ DONE 2026-09-17.**
+`src/driver.ts` has `PageReader`/`Driver` and `stagehandReader`/`stagehandDriver`. Read path (session/postcondition/declaration) retyped `Page`→`PageReader`; `readTree` delegates to `reader.snapshotTree()`; `pageId`→`reader.id`. `withReplay(source)` accepts a Stagehand (wrapped via `stagehandDriver`) **or** a ready `Driver` (the Phase 2 entry point), so all call sites and `launch()` are unchanged. `normalizeTree` stays in postcondition.ts (still tested there) and the Stagehand reader uses it — a CDP reader will emit normalized lines directly. **199 tests green (was 198, +1 proving the Driver boundary); the Stagehand path still calls `page.snapshot()`, so behavior is identical.**
 
 **Phase 1 — the shared CDP reader + Stagehand onto it + re-cert.**
 - `src/reader-cdp.ts`: `snapshotTree()` from `Accessibility.getFullAXTree` (spike sketch — DFS `childIds`, drop `ignored`/`none`/`generic`/`InlineTextBox`, append `[selected]`/`[checked]` from AX `properties`), and `evaluate()` via `Runtime.evaluate`. Reader takes a `cdp(method,params)` from the driver.
