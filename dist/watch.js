@@ -24,16 +24,16 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { cdpConnect } from "./cdp.js";
-import { originOf, isWriteError, MUTATING, bodyErrorPattern } from "./sidecar.js";
+import { originOf, isWriteError, trackWrites } from "./netwatch.js";
 import { hashStep, makeSigner } from "./chain.js";
 // Observe mode has no act() bracket to tie a failure to the agent's intent, so
-// its passive did-not-land is deliberately narrower than wrapped mode's: auth
-// failures (401/403) are excluded — pervasive as background token/JWT probes on
-// logged-out pages (real-site cry-wolf experiment: vercel POST /api/jwt 403 cried
-// wolf). A genuinely forbidden write is a MISS here, never a false accusation;
-// wrapped mode (with a causal bracket) keeps the sharp full-4xx classification.
+// its passive verdict is deliberately narrower than wrapped mode's: auth
+// failures (401/403) are dropped entirely — pervasive as background token/JWT
+// probes on logged-out pages (real-site cry-wolf experiment: vercel POST
+// /api/jwt 403 cried wolf). A forbidden write is a genuine MISS here: it is
+// neither accused (no did-not-land) nor claimed landed. Wrapped mode (with a
+// causal bracket) keeps the sharp full-4xx classification.
 const PASSIVE_AUTH_SKIP = new Set([401, 403]);
-const isPassiveWriteError = (status, method) => isWriteError(status, method) && !PASSIVE_AUTH_SKIP.has(status);
 const pathOf = (u) => {
     try {
         const x = new URL(u);
@@ -51,7 +51,6 @@ export async function startWatch(opts) {
     const conn = await cdpConnect(opts.port);
     if (!conn)
         return null;
-    const bodyRe = bodyErrorPattern(opts.bodyErrors);
     const grace = opts.graceMs ?? 1200;
     const apiOrigins = (opts.apiOrigins ?? []).filter(Boolean);
     const signingKey = opts.signingKey ?? process.env.TRUEFACT_SIGNING_KEY;
@@ -66,11 +65,9 @@ export async function startWatch(opts) {
         const o = originOf(url);
         return o !== "" && (o === pageOrigin || apiOrigins.includes(o));
     };
-    const reqOf = new Map();
     // retry-collapse: a pending failure per endpoint, suppressed if a later
     // success to the same (method,url) lands within `grace`.
     const pendingErr = new Map();
-    const inflight = new Set();
     const emit = (o) => {
         if (opts.jsonl) {
             const step = buildStep(o, prevHash, sign);
@@ -104,65 +101,27 @@ export async function startWatch(opts) {
             }, grace),
         });
     };
-    const readBodyThen = (requestId, rec) => {
-        const pr = (async () => {
-            try {
-                const r = (await conn.cmd("Network.getResponseBody", { requestId }));
-                if (r?.body) {
-                    const text = r.base64Encoded ? Buffer.from(r.body, "base64").toString("utf8") : r.body;
-                    if (bodyRe.test(text))
-                        return finalize(rec, "did-not-land", "network-error");
-                }
-            }
-            catch {
-                /* body evicted / owned by another client — fail safe to landed */
-            }
-            finalize(rec, "landed", "network-ok");
-        })();
-        inflight.add(pr);
-        void pr.finally(() => inflight.delete(pr));
-    };
+    // One shared write tracker (netwatch): it emits a terminal outcome per mutating
+    // request with the 2xx-then-cancel guard already applied. Observe policy is
+    // applied here: scope to a watched origin, treat 401/403 as a MISS not a false
+    // accusation (isPassiveWriteError), and hold a failure for the grace window.
+    const tracker = trackWrites(conn, {
+        bodyErrors: opts.bodyErrors,
+        onOutcome: (o) => {
+            if (!watched(o.url))
+                return; // tracker already filters to mutating writes
+            // 401/403: a MISS in passive mode — not accused, not claimed landed.
+            if (o.status != null && PASSIVE_AUTH_SKIP.has(o.status))
+                return;
+            const rec = { url: o.url, method: o.method, status: o.status ?? undefined };
+            const failed = o.bodyError || o.status == null || isWriteError(o.status, o.method);
+            finalize(rec, failed ? "did-not-land" : "landed", failed ? "network-error" : "network-ok");
+        },
+    });
     conn.on("Page.frameNavigated", (p) => {
         const f = p.frame;
         if (f && !f.parentId && f.url)
             pageOrigin = originOf(f.url); // main frame only
-    });
-    conn.on("Network.requestWillBeSent", (p) => {
-        const req = p.request;
-        reqOf.set(p.requestId, { url: req?.url ?? "", method: req?.method ?? "GET" });
-    });
-    conn.on("Network.responseReceived", (p) => {
-        const rec = reqOf.get(p.requestId);
-        const r = p.response;
-        if (rec && r && typeof r.status === "number")
-            rec.status = r.status;
-    });
-    conn.on("Network.loadingFinished", (p) => {
-        const rec = reqOf.get(p.requestId);
-        if (!rec || !MUTATING.has(rec.method.toUpperCase()) || !watched(rec.url))
-            return;
-        reqOf.delete(p.requestId);
-        const status = rec.status ?? 0;
-        if (isPassiveWriteError(status, rec.method))
-            return finalize(rec, "did-not-land", "network-error");
-        if (bodyRe && status >= 200 && status < 300)
-            return readBodyThen(p.requestId, rec);
-        finalize(rec, "landed", "network-ok");
-    });
-    conn.on("Network.loadingFailed", (p) => {
-        const rec = reqOf.get(p.requestId);
-        if (!rec || !MUTATING.has(rec.method.toUpperCase()) || !watched(rec.url))
-            return;
-        reqOf.delete(p.requestId);
-        // A loadingFailed AFTER a 2xx response is a canceled/aborted body load
-        // (navigation, sendBeacon) — the server already accepted the write, so this
-        // is not a failure. Real-site experiment: theverge POST /metrics (204) and
-        // linkedin POST /li/track (200) cried wolf here when navigation canceled the
-        // in-flight beacon. Only a wire failure with NO response is a failed write.
-        const status = rec.status ?? 0;
-        if (status >= 200 && status < 300)
-            return finalize(rec, "landed", "network-ok");
-        finalize(rec, "did-not-land", "network-error"); // genuine wire failure before any response
     });
     await conn.cmd("Page.enable");
     await conn.cmd("Network.enable");
@@ -180,7 +139,7 @@ export async function startWatch(opts) {
     // if one is still pending, no success ever came, so it stands. Used by tests
     // and by close() so a held failure isn't lost on shutdown.
     const settle = async () => {
-        await Promise.allSettled([...inflight]);
+        await tracker.settle();
         for (const [key, p] of [...pendingErr]) {
             clearTimeout(p.timer);
             pendingErr.delete(key);

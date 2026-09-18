@@ -52,16 +52,26 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
       return req.url === "/boom" ? res.writeHead(500).end("x") : res.writeHead(404).end();
     });
     thirdBase = await listen(third);
+    let flaky = 0;
     app = createServer((req, res) => {
       if (req.method === "POST" && req.url === "/submit") return res.writeHead(500).end("upstream exploded");
       if (req.method === "POST" && req.url === "/declined") return res.writeHead(402, { "content-type": "application/json" }).end('{"error":"card declined"}');
       if (req.method === "POST" && req.url === "/ok") return res.writeHead(200, { "content-type": "application/json" }).end("{}");
       if (req.method === "POST" && req.url === "/gql-err") return res.writeHead(200, { "content-type": "application/json" }).end('{"data":null,"errors":[{"message":"mutation rejected"}]}');
+      if (req.method === "POST" && req.url === "/flaky") return res.writeHead(flaky++ === 0 ? 500 : 200, { "content-type": "application/json" }).end("{}");
+      // 200, then the body load is canceled (navigation/beacon shape): send a
+      // content-length longer than the bytes, then destroy the socket.
+      if (req.method === "POST" && req.url === "/truncate") { res.writeHead(200, { "content-type": "application/json", "content-length": "100" }); res.write("{}"); setTimeout(() => res.socket?.destroy(), 120); return; }
       if (req.url === "/optimistic") return res.writeHead(200, { "content-type": "text/html" }).end(html("/submit"));
       if (req.url === "/declined-checkout") return res.writeHead(200, { "content-type": "text/html" }).end(html("/declined"));
       if (req.url === "/clean") return res.writeHead(200, { "content-type": "text/html" }).end(html("/ok"));
       if (req.url === "/gql") return res.writeHead(200, { "content-type": "text/html" }).end(html("/gql-err"));
       if (req.url === "/thirdparty") return res.writeHead(200, { "content-type": "text/html" }).end(html(`${thirdBase}/boom`));
+      if (req.url === "/truncate-checkout") return res.writeHead(200, { "content-type": "text/html" }).end(html("/truncate"));
+      // clicks POST /flaky twice: 500 then 200 (a retry that recovers).
+      if (req.url === "/retry-checkout") return res.writeHead(200, { "content-type": "text/html" }).end(
+        `<!doctype html><meta charset=utf8><title>Checkout</title><h1>Checkout</h1><button id=place>Place order</button><p id=ok></p>
+         <script>document.getElementById('place').onclick=async()=>{try{await fetch('/flaky',{method:'POST'})}catch(e){}try{await fetch('/flaky',{method:'POST'})}catch(e){}document.getElementById('ok').textContent='✅ Order placed';};</script>`);
       return res.writeHead(404).end("no");
     });
     base = await listen(app);
@@ -74,7 +84,7 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     await shut(third);
   });
 
-  const run = async (route: "optimistic" | "declined-checkout" | "clean" | "thirdparty" | "gql", apiOrigins?: string[], bodyErrors?: boolean) => {
+  const run = async (route: "optimistic" | "declined-checkout" | "clean" | "thirdparty" | "gql" | "truncate-checkout" | "retry-checkout", apiOrigins?: string[], bodyErrors?: boolean) => {
     const page = (await sh.browser.context.activePage())!;
     const fake = fakeStagehand(sh, page, { actions: [{ selector: "#place" }] });
     const w = withTrueFact(fake, { network: { port: PORT, apiOrigins, bodyErrors }, screenshots: false, waitMs: 600 });
@@ -144,6 +154,21 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     assert.equal(step.verdict, "did-not-land");
     assert.equal(step.evidence.postcondition?.reason, "network-error");
     assert.equal(step.evidence.postcondition?.network?.errors[0]?.status, 200);
+  });
+
+  it("cry-wolf (wrapped): a 2xx whose body load is canceled must NOT demote a good write", async () => {
+    // POST /truncate returns 200 then the socket dies mid-body (navigation/beacon
+    // shape). The old wrapped sidecar recorded that loadingFailed as status:null
+    // and cried wolf; the shared 2xx-then-cancel guard keeps it landed.
+    const step = await run("truncate-checkout");
+    assert.equal(step.verdict, "landed");
+    assert.equal(step.evidence.postcondition?.network, undefined);
+  });
+
+  it("retry-collapse (wrapped): 500 then 200 to one endpoint in the bracket nets landed", async () => {
+    const step = await run("retry-checkout");
+    assert.equal(step.verdict, "landed");
+    assert.equal(step.evidence.postcondition?.network, undefined);
   });
 
   it("apiOrigins: a declared cross-origin write host DOES demote — the split-origin fix (app -> api.host)", async () => {
