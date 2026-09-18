@@ -2,7 +2,8 @@
 
 **Your browser agent said it placed the order. The order wasn't placed. You found out from a customer.**
 
-![TrueFact catching an optimistic-UI failure: the agent reported success, the server returned 500, `truefact assert` exits 1](demo/truefact-demo.gif)
+<img src="demo/truefact-demo.gif" alt="TrueFact catching an optimistic-UI failure: the agent reported success, the server returned 500, truefact assert exits 1">
+
 
 TrueFact wraps your browser agent. After every action it reads the live page itself, and the network under it. Then it returns an independent verdict: **landed / did-not-land / inconclusive**. It never trusts what the agent claims. The gap between "agent said done" and "the world says done" is the whole product.
 
@@ -60,10 +61,10 @@ truefact assert run.jsonl --with assertions.mjs   # exits 1 if any write step fa
 
 ## Let a coding agent verify its own feature
 
-Your coding agent said it wired up "Sign in." The redirect works, the dashboard renders, the tests are green. But the session cookie was never set — the first protected request 401s in production. Green tests pass on code that looks logged in. TrueFact is the acceptance check the agent can't fake: after it ships a web change, drive the real flow and ask the server who you are.
+Your coding agent said it wired up "Sign in." The redirect works, the dashboard renders, the tests are green. But the session cookie was never set, so the first protected request 401s in production. Green tests pass on code that looks logged in. TrueFact is the acceptance check the agent can't fake: after it ships a web change, drive the real flow and ask the server who you are.
 
 ```ts
-// the agent just implemented login — prove the session is real, not just the redirect
+// the agent just implemented login. prove the session is real, not just the redirect
 await tr.page.goto("http://localhost:3000/login");
 await tr.act("sign in as the demo user");
 await tr.act("open the dashboard", {
@@ -72,12 +73,12 @@ await tr.act("open the dashboard", {
     { kind: "text", matches: /Signed in as/, role: "status" },        // and the UI reflects it
   ],
 });
-if (tr.replay.verdict !== "landed") process.exit(1);   // auth is broken — fail the PR
+process.exit(tr.replay.verdict === "landed" ? 0 : 1);   // fail the PR unless the write actually landed
 ```
 
 "I implemented it, tests pass" is the untrusted channel. The verdict is whether the server actually knows you're authenticated. Wired into the same `truefact assert` gate, a coding agent can't merge a feature that only works in its own description.
 
-> Scope: TrueFact checks what a browser reaches — the running app, its pages, its network. Not your unit tests or your build; the thing your users actually touch.
+> Scope: TrueFact checks what a browser reaches: the running app, its pages, its network. Not your unit tests or your build, but the thing your users actually touch.
 
 ## Precision, when a write matters
 
@@ -137,7 +138,7 @@ Observe mode has no wrapped action to bracket. So it stays conservative, to prot
 
 ## Bracket a browser you drive yourself
 
-`watch` is the passive network floor. `serve` is the full verdict for a browser TrueFact didn't launch — a Python Playwright bridge, Puppeteer, anything that can start Chrome with `--remote-debugging-port`. Send `before`, do the action, send `after`, get the Step. Protocol in [docs/SERVE.md](docs/SERVE.md).
+`watch` is the passive network floor. `serve` is the full verdict for a browser TrueFact didn't launch: a Python Playwright bridge, Puppeteer, anything that can start Chrome with `--remote-debugging-port`. Send `before`, do the action, send `after`, get the Step. Protocol in [docs/SERVE.md](docs/SERVE.md).
 
 ```bash
 truefact serve --port 9222 --jsonl run.jsonl
@@ -153,7 +154,7 @@ const tr = withTrueFact(stagehand, { redactFields: ["ssn", /card/] }); // values
 
 ## Does it cry wolf?
 
-A verifier that halts a good run is worse than useless. This is the number TrueFact protects first. Across a 520-write benchmark spanning four models weak to strong, it raised **zero false halts (0/279)**. The verdict reads the page, so it's the same whoever drives. In pure observe mode, `truefact watch` held the same line: **zero false halts across 20 live sites** (docs/EXPERIMENT-SITES.md run #4), background telemetry and all. The harder axis is recall, catching every lie a page tells, and that number is still being measured. The network floor and `probe` are the out-of-band checks aimed at the worst case: a page that shows success over a write that failed. Full method and numbers: [docs/BUSINESS.md](docs/BUSINESS.md), [bench/out/report.md](bench/out/report.md).
+A verifier that halts a good run is worse than useless. This is the number TrueFact protects first. Across a 520-write benchmark spanning four models weak to strong, it raised **zero false halts (0/279)**. The verdict reads the page, so it's the same whoever drives. In pure observe mode, `truefact watch` held the same line: **zero false halts across 20 live sites** (docs/EXPERIMENT-SITES.md run #4), background telemetry and all. Recall is measured on that same benchmark. With the network reader on, TrueFact caught every failed write across all four rungs: residual miss 0/60 on each, 520 writes, and both pre-registered gates pass. The one gap no network read can close is a clean success that never persists on the server. The network floor and `probe` are the out-of-band checks aimed at the worst case: a page that shows success over a write that failed. Full method and numbers: [docs/BUSINESS.md](docs/BUSINESS.md), [bench/out/report.md](bench/out/report.md).
 
 ## The rule
 
@@ -161,13 +162,13 @@ TrueFact never trusts the agent. It reads the page and the network. The agent's 
 
 ## What it works with
 
-Two reads, two reaches. **Network truth** — the 500 behind a green checkmark — comes from a CDP client attached to the Chrome the agent drives. It is framework-agnostic: anything on a real Chrome with a debug port gets it. **Page truth** — a click that hit an overlay, a form that silently rejected — needs an in-process page handle, so it is per-driver.
+Two reads, two reaches. **Network truth**, the 500 behind a green checkmark, comes from a CDP client attached to the Chrome the agent drives. It is framework-agnostic: anything on a real Chrome with a debug port gets it. **Page truth**, a click that hit an overlay or a form that silently rejected, needs an in-process page handle, so it is per-driver.
 
 | Framework | Network verdict | Page/DOM verdict | Disbelieves the agent's claim |
 |---|---|---|---|
-| **Stagehand 4.x** | ✅ | ✅ a11y tree | ✅ Stagehand reports a self-claim to check |
-| **Playwright** | ✅ | ✅ CDP `getFullAXTree` | — a Playwright `act` is your own call, so there is no claim to contradict |
-| **Browser-Use, Puppeteer, a human** | ✅ via `truefact watch` | — | — |
+| **Stagehand 4.x** | yes | yes, a11y tree | yes, Stagehand reports a self-claim to check |
+| **Playwright** | yes | yes, CDP `getFullAXTree` | n/a, a Playwright `act` is your own call, so there is no claim to contradict |
+| **Browser-Use, Puppeteer, a human** | yes, via `truefact watch` | no | no |
 
 ```ts
 import { withTrueFact, playwrightDriver } from "truefact";
