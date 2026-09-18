@@ -4,6 +4,14 @@
 
 <img src="demo/truefact-demo.gif" alt="TrueFact catching an optimistic-UI failure: the agent reported success, the server returned 500, truefact assert exits 1">
 
+Across a 520-write benchmark, four models from weak to strong, agents reported success on 46% of writes that never landed. The rate did not fall as the model got stronger: haiku 46%, sonnet 46%, opus 46%, a local model 46%. A better agent does not lie less.
+
+| Failed writes left undetected |     |
+|-------------------------------|-----|
+| Agent alone (any model)       | 46% |
+| With TrueFact                 | 0%  |
+
+That is 0 of 60 failed writes missed on each rung, with 0 of 279 good writes wrongly halted. The verdict is a deterministic read of the page and the network, not a model grading a model. No second LLM, no extra tokens, no added cost. Full method and confidence bounds: [bench/out/report.md](bench/out/report.md).
 
 TrueFact wraps your browser agent. After every action it reads the live page itself, and the network under it. Then it returns an independent verdict: **landed / did-not-land / inconclusive**. It never trusts what the agent claims. The gap between "agent said done" and "the world says done" is the whole product.
 
@@ -154,7 +162,7 @@ const tr = withTrueFact(stagehand, { redactFields: ["ssn", /card/] }); // values
 
 ## Does it cry wolf?
 
-A verifier that halts a good run is worse than useless. This is the number TrueFact protects first. Across a 520-write benchmark spanning four models weak to strong, it raised **zero false halts (0/279)**. The verdict reads the page, so it's the same whoever drives. In pure observe mode, `truefact watch` held the same line: **zero false halts across 20 live sites** (docs/EXPERIMENT-SITES.md run #4), background telemetry and all. Recall is measured on that same benchmark. With the network reader on, TrueFact caught every failed write across all four rungs: residual miss 0/60 on each, 520 writes, and both pre-registered gates pass. The one gap no network read can close is a clean success that never persists on the server. The network floor and `probe` are the out-of-band checks aimed at the worst case: a page that shows success over a write that failed. Full method and numbers: [docs/BUSINESS.md](docs/BUSINESS.md), [bench/out/report.md](bench/out/report.md).
+A verifier that halts a good run is worse than useless. This is the number TrueFact protects first. Across a 520-write benchmark spanning four models weak to strong, it raised **zero false halts (0/279)**. The verdict reads the page, so it's the same whoever drives. In pure observe mode, `truefact watch` held the same line: **zero false halts across 20 live sites** (docs/EXPERIMENT-SITES.md run #4), background telemetry and all. Recall is measured on that same benchmark and shown at the top. The one gap no network read can close is a clean success that never persists on the server. The network floor and `probe` are the out-of-band checks aimed at the worst case: a page that shows success over a write that failed. Full method and numbers: [docs/BUSINESS.md](docs/BUSINESS.md), [bench/out/report.md](bench/out/report.md).
 
 ## The rule
 
