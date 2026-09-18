@@ -4,11 +4,14 @@
 // a manifest row. Needs a key for the cloud rungs (git-ignored .env, via
 // --env-file); the local oMLX rung needs none. Nothing here authors a claim.
 // See docs/DAY6.md §4.  Usage:  node --env-file=.env scripts/bench/run.mjs
+import net from "node:net";
 import { mkdirSync, appendFileSync, writeFileSync } from "node:fs";
 import { Stagehand, localBrowser } from "@browserbasehq/stagehand";
 import { withTrueFact } from "../../dist/index.js";
 import { startFixtures, TASKS } from "./fixtures.mjs";
 import { omlxModel, omlxModelId } from "../omlx-model.mjs";
+
+const freePort = () => new Promise((res) => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => res(port)); }); });
 
 const N = Number(process.env.BENCH_N || 5);
 const OUT = "bench/out";
@@ -54,10 +57,16 @@ for (const task of TASKS) {
   for (const rung of rungs) {
     for (let run = 1; run <= N; run++) {
       await fx.reset();
-      const browser = await localBrowser.launch({ headless: true });
+      // A debug port so the network sidecar can attach: the fixtures' decisive
+      // write hits the server (optimistic-ui returns 500), and status-based
+      // network truth is the out-of-band catch for the page that lies. Without
+      // this the bench measured the page-read floor ALONE and missed optimistic-ui
+      // by construction (the product's whole differentiator was switched off).
+      const port = await freePort();
+      const browser = await localBrowser.launch({ headless: true, port });
       const stagehand = await Stagehand.create({ browser, model: rung.make(), logging: { level: "error" } });
       const jsonl = `${OUT}/${task.id}__${rung.model.replace(/\//g, "-")}__${run}.jsonl`;
-      const { act, extract, page, replay } = withTrueFact(stagehand, { jsonl, screenshots: true });
+      const { act, extract, page, replay } = withTrueFact(stagehand, { jsonl, screenshots: true, network: { port } });
       let claimBelief = null;
       try {
         await page.goto(fx.url(task.id));

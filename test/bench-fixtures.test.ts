@@ -2,8 +2,11 @@
 // can be wrong before any model runs, so the oracle gets the same treatment as
 // the wrapper: fakeStagehand performs the decisive action and we read /truth.
 import { before, after, describe, it } from "node:test";
+import { createServer } from "node:http";
 import assert from "node:assert/strict";
+import { localBrowser } from "@browserbasehq/stagehand";
 import { withTrueFact } from "../src/index.js";
+import { playwrightDriver } from "../src/driver-playwright.js";
 import { fakeStagehand, withBrowser } from "./helpers.js";
 // @ts-expect-error — .mjs fixture, no types
 import { startFixtures } from "../scripts/bench/fixtures.mjs";
@@ -45,11 +48,13 @@ describe("bench fixtures: the oracle is honest", () => {
     assert.equal(step.evidence.session.obstruction, "overlay");
   });
 
-  it("optimistic-ui: the banner lies, the POST fails — oracle false, and TrueFact currently MISSES it (the measured ceiling)", async () => {
+  it("optimistic-ui: the PAGE-READ floor alone misses the lying banner — landed (the network sidecar is the fix, see the recall-lever block below)", async () => {
     const { step, truth } = await runTask("optimistic-ui", click);
     assert.equal(truth.landed, false); // the write genuinely did not happen
-    // This is the product's known ceiling (DAY6 §6): a page that lies to its user
-    // lies to the confirmation heuristic. Pinned so an improvement flips this test.
+    // Page-read ONLY (no network): a page that lies to its user lies to the
+    // confirmation heuristic. This pins that floor's ceiling. The network sidecar
+    // catches it out of band — see "network sidecar catches optimistic-ui" below,
+    // and the bench runner now attaches it by default (scripts/bench/run.mjs).
     assert.equal(step.verdict, "landed");
     assert.equal(step.evidence.postcondition?.reason, "confirmation");
   });
@@ -95,5 +100,50 @@ describe("bench fixtures: the oracle is honest", () => {
     assert.equal(truth.landed, true);
     assert.equal(step.evidence.session.obstruction, null); // geometry check clears the non-covering modal
     assert.notEqual(step.verdict, "did-not-land"); // no longer a false halt (inconclusive: real write, no feedback)
+  });
+});
+
+// The recall lever: with the network sidecar ON (as the bench runner now attaches
+// it), the flagship optimistic-ui 500 is caught out of band. This is the fixture
+// the page-read floor MISSES above (verdict "landed", the measured ceiling), so
+// it pins the exact improvement the network wedge buys — at zero cry-wolf on a
+// genuine landing. Driven by a real Playwright over CDP so the sidecar is a pure
+// out-of-band second client, exactly like production.
+describe("bench fixtures: network sidecar catches optimistic-ui (recall lever)", () => {
+  let fx: Awaited<ReturnType<typeof startFixtures>>;
+  let browser: Awaited<ReturnType<typeof localBrowser.launch>>, page: import("playwright-core").Page, port = 0;
+  before(async () => {
+    fx = await startFixtures();
+    const s = createServer(); await new Promise<void>((r) => s.listen(0, "127.0.0.1", () => r()));
+    port = (s.address() as { port: number }).port; await new Promise<void>((r) => s.close(() => r()));
+    browser = await localBrowser.launch({ headless: true, port });
+    const { chromium } = await import("playwright-core");
+    const cdp = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+    page = cdp.contexts()[0].pages()[0] ?? (await cdp.contexts()[0].newPage());
+  });
+  after(async () => { await browser?.close(); await fx?.close(); });
+
+  const drive = async (task: string, action: { selector: string; method?: string; arguments?: string[] }) => {
+    await fx.reset();
+    const w = withTrueFact(playwrightDriver(page), { network: { port }, screenshots: false, waitMs: 900 });
+    await w.page.goto(fx.url(task));
+    await w.act(action);
+    const stp = [...w.replay.steps].reverse().find((s) => s.kind === "write")!;
+    const truth = await fx.truth(task);
+    await w.close();
+    return { step: stp, truth };
+  };
+
+  it("optimistic-ui: the 500 behind the lying banner → did-not-land (network-error)", async () => {
+    const { step, truth } = await drive("optimistic-ui", { selector: "#place", method: "click" });
+    assert.equal(truth.landed, false);
+    assert.equal(step.verdict, "did-not-land");
+    assert.equal(step.evidence.postcondition?.reason, "network-error");
+  });
+
+  it("clean-checkout: a genuine 200 landing is not falsely halted by the sidecar (cry-wolf guard)", async () => {
+    const { step, truth } = await drive("clean-checkout", { selector: "#place", method: "click" });
+    assert.equal(truth.landed, true);
+    assert.notEqual(step.verdict, "did-not-land");
   });
 });

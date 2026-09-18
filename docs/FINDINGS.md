@@ -107,6 +107,37 @@ silent-noop, and missed only the fixture built to be its ceiling — the cleanes
 possible confirmation that the harness measures what it claims. The rate itself is
 still Day 6's job.
 
+## 4b. The recall gate: the bench had the sidecar switched off (2026-09-18)
+
+The 520-run ladder (`bench/out/report.md`) read **instrument works: false — miss
+39/51, PUBLISH: false**. On inspection every miss was `optimistic-ui`, and the
+cause was mechanical: **the bench runner never attached the network sidecar.**
+`scripts/bench/run.mjs` wrapped with `{ jsonl, screenshots }` and no
+`network: { port }`, so the product's entire differentiator was off. `optimistic-ui`
+returns HTTP 500 behind a lying ✅ banner, and with no network reader the page-read
+floor sees the banner and calls it `landed`. The bench was measuring the floor
+alone, so it missed the one fixture the sidecar exists to catch.
+
+**Fix (this session):** `run.mjs` now launches Chrome on a debug port and passes
+`network: { port }`, the same reader wrapped mode ships. Proven the way MEMORY
+requires — tiny hermetic fixtures, not a re-run of the ladder:
+- Hermetic instrument recall (scripted click, sidecar on, no model, no key):
+  **`optimistic-ui` → `did-not-land` (network-error)**, 0/6 failed writes read as a
+  false `landed` (the dangerous cell), 0/7 cry-wolf on genuine landings.
+- Committed test: `test/bench-fixtures.test.ts` "network sidecar catches
+  optimistic-ui (recall lever)" pins the catch and the cry-wolf guard.
+
+**Projected gate:** all 40 `optimistic-ui` rows in the recorded manifest have
+`claimExec:true` (the agent clicked, so the 500 fired), so with the sidecar on each
+deterministically catches it. Nothing else changes: no other fixture emits a
+failing request the sidecar sees, and the landing set keeps cry-wolf 0. Re-scoring
+the manifest with that one flip gives **residual MISS 0/51, cry-wolf 0/279,
+PUBLISH: true**. Regenerate: flip every `optimistic-ui` row's `verdict` to
+`did-not-land` in `bench/out/oracle.jsonl` and run `npm run bench:score` on the
+result. This is a deterministic projection over the recorded runs, not a fresh
+measurement; a model-driven re-run (`npm run bench`, needs a key, ~$5) confirms it
+independently.
+
 ## 5. Not yet established
 
 - **The rate.** The pilot above is one local rung at N=3. The write-side false-success rate
