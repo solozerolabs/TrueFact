@@ -1,0 +1,5 @@
+RFC 8785 (JSON Canonicalization Scheme) conformance vectors.
+Copied verbatim from the reference suite:
+  https://github.com/cyberphone/json-canonicalization  (testdata/input, testdata/output)
+Used by test/chain-jcs.test.ts to prove src/chain.ts canonical() emits
+byte-identical JCS output, so a TrueFact chain is third-party verifiable.

@@ -12,7 +12,14 @@
 // Without a key, nothing changes — the hash chain alone still detects tamper.
 import { createHash, createPrivateKey, createPublicKey, sign as edSign, verify as edVerify, type KeyObject } from "node:crypto";
 
-/** Deterministic JSON: keys sorted, undefined dropped. Same bytes on re-hash. */
+/**
+ * Canonical JSON per RFC 8785 (JCS): keys sorted by UTF-16 code unit, undefined
+ * dropped, numbers and strings emitted by JSON.stringify — which is exactly the
+ * ECMAScript Number-to-String and minimal string escaping JCS mandates. So the
+ * bytes are third-party verifiable: any RFC 8785 implementation re-hashes a
+ * TrueFact step to the same digest. Conformance is proven against the official
+ * reference vectors in test/chain-jcs.test.ts — keep that green.
+ */
 export function canonical(v: unknown): string {
   if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
   if (Array.isArray(v)) return "[" + v.map(canonical).join(",") + "]";

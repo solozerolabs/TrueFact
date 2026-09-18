@@ -108,12 +108,16 @@ Ranked by (developer UX impact) × (de-risks the "does it generalize" question) 
    Multi-target (popups/iframes, where the write has no readable response at all)
    remains the harder, still-open part.
 
-4. **RFC 8785 (JCS) canonical JSON in `chain.ts`.** Today `canonical()` is a
-   custom scheme, so **no third party can verify a TrueFact chain and we can't
-   verify anyone else's** — which defeats the entire point of a tamper-evident
-   receipt. JCS is ~60 lines, no dependency, and it aligns us with the emerging
-   interop spec and IETF draft-sharif. Highest leverage per line among the
-   receipt work. Effort: S. (Breaks existing recorded chains — fine, pre-production.)
+4. **RFC 8785 (JCS) canonical JSON in `chain.ts`. RESOLVED 2026-09-17.** The
+   earlier worry was that `canonical()` was a custom scheme, so no third party
+   could verify a TrueFact chain. **On inspection it was already conformant** —
+   it delegates numbers and strings to `JSON.stringify` (the exact ECMAScript
+   Number-to-String and minimal escaping JCS mandates) and sorts keys by UTF-16
+   code unit. Proven, not assumed: `canonical()` emits byte-identical output on
+   all six official RFC 8785 reference vectors plus the number edge cases
+   (`test/chain-jcs.test.ts`, vectors in `test/fixtures/jcs/`). So the chain is
+   third-party verifiable today; no rewrite — the work was the conformance proof
+   and documenting the claim in `chain.ts`. No dependency added.
 
 5. **`truefact fleet --html` — a static daily board.** Reuse the `view.ts`
    single-file pattern at the run level: landed-rate sparkline, the `needReview`
@@ -144,7 +148,7 @@ real drivers, a well-tested classifier). But these are real:
   second driver. They are small, differentiated ("a receipt, not a log"), and
   each is either the demo's payoff or the enterprise on-ramp. Deleting working,
   tested, differentiated UX to save 200 lines pre-PMF is not KISS, it is
-  self-harm. `chain.ts` gets fixed (JCS), not cut.
+  self-harm. `chain.ts` was proven JCS-conformant (§4.4), not cut.
 - **`bench/` stays under `scripts/`** but stop citing its numbers as if the
   publish gate cleared (§8).
 
@@ -203,8 +207,9 @@ is a devtool feature, not a company — and the fleet/enterprise layer has no bu
 - BUSINESS.md "land: checkout/payments" — the sidecar structurally could not see
   cross-origin checkout. §2/§4.3 fix this.
 - SPEC-V2 §12 lists observe-mode, multi-target, learned postconditions, and
-  RFC 3161 as "deferred." §4 promotes `watch`, multi-target, and JCS to the
-  critical path; the rest stay deferred with intent.
+  RFC 3161 as "deferred." §4 promoted `watch` and multi-target to the critical
+  path; JCS turned out already-conformant (§4.4, resolved); the rest stay
+  deferred with intent.
 - README benchmark claims read as if the publish gate cleared; FINDINGS says the
   multi-rung rate is unmeasured. Reconcile the README to the evidence (§8) before
   publish.
