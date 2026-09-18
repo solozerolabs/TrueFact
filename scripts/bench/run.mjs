@@ -5,7 +5,7 @@
 // --env-file); the local oMLX rung needs none. Nothing here authors a claim.
 // See docs/DAY6.md §4.  Usage:  node --env-file=.env scripts/bench/run.mjs
 import net from "node:net";
-import { mkdirSync, appendFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, appendFileSync, writeFileSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { Stagehand, localBrowser } from "@browserbasehq/stagehand";
 import { withTrueFact } from "../../dist/index.js";
 import { startFixtures, TASKS } from "./fixtures.mjs";
@@ -16,6 +16,24 @@ const freePort = () => new Promise((res) => { const s = net.createServer(); s.li
 const N = Number(process.env.BENCH_N || 5);
 const OUT = "bench/out";
 mkdirSync(OUT, { recursive: true });
+
+// Single-run lock. Two concurrent runs both writeFileSync the same oracle.jsonl
+// and clobber each other mid-run (this corrupted a real N=10 run — the manifest
+// had to be rebuilt from stdout). Refuse the second run rather than corrupt both;
+// a run also owns Chromes and real API spend, so one at a time is the right default.
+// ponytail: coarse whole-run lock. If parallel benches are ever wanted, give each a
+// unique OUT dir instead. A stale lock (dead pid) is auto-reclaimed.
+const LOCK = `${OUT}/.run.lock`;
+if (existsSync(LOCK)) {
+  const pid = Number(readFileSync(LOCK, "utf8").trim());
+  let alive = false;
+  try { process.kill(pid, 0); alive = true; } catch { /* dead pid → stale lock */ }
+  if (alive) { console.error(`A benchmark run is already active (pid ${pid}). Wait for it, or rm ${LOCK} if it is stale.`); process.exit(1); }
+}
+writeFileSync(LOCK, String(process.pid));
+const releaseLock = () => { try { if (existsSync(LOCK) && readFileSync(LOCK, "utf8").trim() === String(process.pid)) rmSync(LOCK); } catch { /* best-effort */ } };
+process.on("exit", releaseLock);
+process.on("SIGINT", () => { releaseLock(); process.exit(130); });
 
 // $/1M tokens [input, output]. Editable — prices AND model ids move; set each
 // id to whatever your provider/Stagehand currently accepts. Local is free.
