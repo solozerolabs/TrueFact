@@ -1,28 +1,28 @@
 # TrueFact benchmark
 
-Runs: 520
+Runs: 156
 
-## anthropic/claude-haiku-4-5  (n=130, $0.209)
-- **exec**:   false-success 46.5% [38.1–55.1] (60/129) → TrueFact residual MISS 16.7% [9.3–28.0] (10/60)
-- **belief**: false-success 26.3% [17.9–36.8] (21/80) → TrueFact residual MISS 47.6% [28.3–67.6] (10/21)
-- cry-wolf 0.0% [0.0–5.3] (0/69) · under-confidence 14.5% [8.1–24.7] (10/69)
+## anthropic/claude-haiku-4-5  (n=39, $0.063)
+- **exec**:   false-success 46.2% [31.6–61.4] (18/39) → TrueFact residual MISS 0.0% [0.0–17.6] (0/18)
+- **belief**: false-success 25.0% [12.0–44.9] (6/24) → TrueFact residual MISS 0.0% [0.0–39.0] (0/6)
+- cry-wolf 0.0% [0.0–15.5] (0/21) · under-confidence 14.3% [5.0–34.6] (3/21)
 
-## anthropic/claude-sonnet-4-5  (n=130, $0.621)
-- **exec**:   false-success 46.2% [37.8–54.7] (60/130) → TrueFact residual MISS 16.7% [9.3–28.0] (10/60)
-- **belief**: false-success 14.3% [7.9–24.3] (10/70) → TrueFact residual MISS 90.0% [59.6–98.2] (9/10)
-- cry-wolf 0.0% [0.0–5.2] (0/70) · under-confidence 14.3% [7.9–24.3] (10/70)
+## anthropic/claude-sonnet-4-5  (n=39, $0.186)
+- **exec**:   false-success 46.2% [31.6–61.4] (18/39) → TrueFact residual MISS 0.0% [0.0–17.6] (0/18)
+- **belief**: false-success 14.3% [5.0–34.6] (3/21) → TrueFact residual MISS 0.0% [0.0–56.2] (0/3)
+- cry-wolf 0.0% [0.0–15.5] (0/21) · under-confidence 14.3% [5.0–34.6] (3/21)
 
-## anthropic/claude-opus-4-8  (n=130, $4.082)
-- **exec**:   false-success 46.2% [37.8–54.7] (60/130) → TrueFact residual MISS 16.7% [9.3–28.0] (10/60)
-- **belief**: false-success 14.7% [8.2–25.0] (10/68) → TrueFact residual MISS 100.0% [72.2–100.0] (10/10)
-- cry-wolf 0.0% [0.0–5.2] (0/70) · under-confidence 14.3% [7.9–24.3] (10/70)
+## anthropic/claude-opus-4-8  (n=39, $1.224)
+- **exec**:   false-success 46.2% [31.6–61.4] (18/39) → TrueFact residual MISS 0.0% [0.0–17.6] (0/18)
+- **belief**: false-success 14.3% [5.0–34.6] (3/21) → TrueFact residual MISS 0.0% [0.0–56.2] (0/3)
+- cry-wolf 0.0% [0.0–15.5] (0/21) · under-confidence 14.3% [5.0–34.6] (3/21)
 
-## local  (n=130, $0.000)
-- **exec**:   false-success 46.2% [37.8–54.7] (60/130) → TrueFact residual MISS 16.7% [9.3–28.0] (10/60)
-- **belief**: false-success 14.3% [7.9–24.3] (10/70) → TrueFact residual MISS 100.0% [72.2–100.0] (10/10)
-- cry-wolf 0.0% [0.0–5.2] (0/70) · under-confidence 14.3% [7.9–24.3] (10/70)
+## local  (n=39, $0.000)
+- **exec**:   false-success 46.2% [31.6–61.4] (18/39) → TrueFact residual MISS 0.0% [0.0–17.6] (0/18)
+- **belief**: false-success 14.3% [5.0–34.6] (3/21) → TrueFact residual MISS 0.0% [0.0–56.2] (0/3)
+- cry-wolf 0.0% [0.0–15.5] (0/21) · under-confidence 14.3% [5.0–34.6] (3/21)
 
 ## Gates (pre-registered)
-- market exists: **true** — anthropic/claude-haiku-4-5: belief false-success 26.3% (21/80)
-- instrument works: **false** — miss 39/51, cry-wolf 0/279
+- market exists: **null** — insufficient-n
+- instrument works: **null** — insufficient-n
 - **PUBLISH: false**

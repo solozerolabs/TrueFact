@@ -135,8 +135,19 @@ the manifest with that one flip gives **residual MISS 0/51, cry-wolf 0/279,
 PUBLISH: true**. Regenerate: flip every `optimistic-ui` row's `verdict` to
 `did-not-land` in `bench/out/oracle.jsonl` and run `npm run bench:score` on the
 result. This is a deterministic projection over the recorded runs, not a fresh
-measurement; a model-driven re-run (`npm run bench`, needs a key, ~$5) confirms it
+measurement; a model-driven re-run (`npm run bench`, needs a key) confirms it
 independently.
+
+**Fresh run confirms it (2026-09-18, N=3, ~$1.47).** A model-driven ladder with the
+sidecar on (haiku, sonnet, opus, and a local oMLX rung, 13 tasks × 3):
+**residual MISS 0.0% on every rung** (exec 0/18 each; belief 0/3–0/6) and
+**cry-wolf 0.0%**. All 12 `optimistic-ui` runs came back `did-not-land` while the
+model itself reported belief-success — the lie caught, independently of the
+projection. The pre-registered **gates read `null` (insufficient-n)** at N=3: the
+belief pool (21–24) is under `marketMinN=30` and the landed pool under
+`cryWolfZeroN=60`, so the gate refuses to print PUBLISH on that few writes (the same
+count-floor behaviour §4a saw). A gate-*true* artifact needs N≈10 (~$5). The
+sidecar-OFF 520-run baseline is preserved in git history at commit `291a240`.
 
 ## 5. Not yet established
 
