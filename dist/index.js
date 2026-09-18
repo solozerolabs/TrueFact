@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync, appendFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { detectSession, fingerprint, settle } from "./session.js";
 import { applyNetwork, captureState, decideWrite, readTree, redactLen, sessionVerdict, } from "./postcondition.js";
-import { attachSidecar } from "./sidecar.js";
+import { attachSidecar, attachSidecarConn } from "./sidecar.js";
 import { hashStep, makeSigner } from "./chain.js";
 import { stagehandDriver } from "./driver.js";
 import { applyDeclarations, checkDeclarations, validateDeclarations, } from "./declaration.js";
@@ -190,7 +190,13 @@ export function withTrueFact(source, opts = {}) {
     // Attach the network sidecar once, lazily. Network.enable is persistent, so
     // enabling it here (before the first write's click) covers every later write.
     let sidecarPromise = null;
-    const sidecar = () => (sidecarPromise ??= opts.network ? attachSidecar(opts.network.port, { bodyErrors: opts.network.bodyErrors }) : Promise.resolve(null));
+    const sidecar = () => (sidecarPromise ??= opts.network
+        ? opts.network.conn
+            ? attachSidecarConn(opts.network.conn, { bodyErrors: opts.network.bodyErrors, ownsConn: false })
+            : opts.network.port
+                ? attachSidecar(opts.network.port, { bodyErrors: opts.network.bodyErrors })
+                : Promise.resolve(null)
+        : Promise.resolve(null));
     const replay = new ReplayImpl(async (decls) => {
         const page = await activePage();
         await settle(page);

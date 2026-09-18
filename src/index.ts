@@ -23,7 +23,8 @@ import {
   type Postcondition,
   type Verdict,
 } from "./postcondition.js";
-import { attachSidecar, type Sidecar } from "./sidecar.js";
+import { attachSidecar, attachSidecarConn, type Sidecar } from "./sidecar.js";
+import type { CdpConn } from "./cdp.js";
 import { hashStep, makeSigner } from "./chain.js";
 import { stagehandDriver, type Driver, type PageReader } from "./driver.js";
 import {
@@ -125,7 +126,8 @@ export interface TrueFactOptions {
   // api.x.com, *.supabase.co, api.stripe.com); an explicit allowlist keeps the
   // cry-wolf guard intact — a third-party analytics 500 still never fires.
   network?: {
-    port: number;
+    port?: number; // TCP debug-port mode (watch, stagehand). Mutually exclusive with conn.
+    conn?: CdpConn; // shared fd-transport conn (serve fd mode): no port, no second client.
     apiOrigins?: string[];
     // Opt-in: also demote on a 2xx whose body says the write failed (GraphQL
     // `{"errors":[…]}`, `{"success":false}`). true = default pattern; a RegExp
@@ -320,7 +322,13 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
   // enabling it here (before the first write's click) covers every later write.
   let sidecarPromise: Promise<Sidecar | null> | null = null;
   const sidecar = (): Promise<Sidecar | null> =>
-    (sidecarPromise ??= opts.network ? attachSidecar(opts.network.port, { bodyErrors: opts.network.bodyErrors }) : Promise.resolve(null));
+    (sidecarPromise ??= opts.network
+      ? opts.network.conn
+        ? attachSidecarConn(opts.network.conn, { bodyErrors: opts.network.bodyErrors, ownsConn: false })
+        : opts.network.port
+          ? attachSidecar(opts.network.port, { bodyErrors: opts.network.bodyErrors })
+          : Promise.resolve(null)
+      : Promise.resolve(null));
 
   const replay = new ReplayImpl(async (decls) => {
     const page = await activePage();

@@ -42,6 +42,17 @@ export async function attachSidecar(port, opts = {}) {
     const conn = await cdpConnect(port);
     if (!conn)
         return null;
+    return attachSidecarConn(conn, { ...opts, ownsConn: true }); // owns the conn it just opened
+}
+/**
+ * Same network sidecar, but on a CdpConn the CALLER owns and shares with the
+ * page reader — used by `serve` in fd mode, where one CDP channel (proxied into
+ * Playwright's in-process session) serves both reads and network events, so
+ * there is no second connection and no debug port. `close()` does NOT close a
+ * shared conn; the owner (serve) closes it once.
+ */
+export async function attachSidecarConn(conn, opts = {}) {
+    const ownsConn = opts.ownsConn ?? false;
     const bodyRe = bodyErrorPattern(opts.bodyErrors);
     // requestId → {url, method}, so responseReceived can class the status by
     // method and a later loadingFailed (which carries neither) can resolve both.
@@ -109,6 +120,9 @@ export async function attachSidecar(port, opts = {}) {
             const ok = new Set(origins.filter(Boolean));
             return ok.size ? events.slice(mark).filter((e) => ok.has(originOf(e.url))) : [];
         },
-        close: () => conn.close(),
+        close: () => {
+            if (ownsConn)
+                conn.close();
+        },
     };
 }

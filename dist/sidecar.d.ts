@@ -1,3 +1,4 @@
+import { type CdpConn } from "./cdp.js";
 export interface NetError {
     url: string;
     status: number | null;
@@ -27,3 +28,13 @@ export declare const bodyErrorPattern: (opt: boolean | RegExp | undefined) => Re
  * (SPEC-V2 §12 multi-target). The page-read verdict still covers that step.
  */
 export declare function attachSidecar(port: number, opts?: SidecarOptions): Promise<Sidecar | null>;
+/**
+ * Same network sidecar, but on a CdpConn the CALLER owns and shares with the
+ * page reader — used by `serve` in fd mode, where one CDP channel (proxied into
+ * Playwright's in-process session) serves both reads and network events, so
+ * there is no second connection and no debug port. `close()` does NOT close a
+ * shared conn; the owner (serve) closes it once.
+ */
+export declare function attachSidecarConn(conn: CdpConn, opts?: SidecarOptions & {
+    ownsConn?: boolean;
+}): Promise<Sidecar>;

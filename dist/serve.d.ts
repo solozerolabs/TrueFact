@@ -2,7 +2,8 @@ import { type CdpAction } from "./driver-cdp.js";
 import { type Step, type TrueFactOptions } from "./index.js";
 import type { Declaration } from "./declaration.js";
 export interface ServeOptions extends Omit<TrueFactOptions, "network"> {
-    port: number;
+    port?: number;
+    cdpFd?: number;
     apiOrigins?: string[];
     bodyErrors?: boolean | RegExp;
 }

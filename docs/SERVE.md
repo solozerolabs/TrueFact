@@ -11,8 +11,20 @@ rides into the run transcript as evidence the model cannot fake.
 
 ## Protocol
 
-1. Launch Chrome/Chromium with `--remote-debugging-port=<N>` and open one page.
-2. Spawn `truefact serve --port <N> [--jsonl run.jsonl] [--api-origins a,b] [--body-errors]`.
+1. Launch Chrome/Chromium and open one page. Two ways to give serve CDP:
+   - **`--cdp-fd <N>` (preferred, no open port).** Pass serve an inherited duplex
+     socket fd; you proxy each CDP command into a CDP session you already own
+     (e.g. Playwright's `new_cdp_session`, itself pipe-based) and stream events
+     back. Nothing binds a debug port, so no same-UID process can reach the
+     browser's control plane. Wire protocol on that fd: serve sends
+     `{"i":<id>,"m":<method>,"p":<params>}`; you reply `{"i":<id>,"r":<result>}`
+     (or `{"i":<id>,"x":"<error>"}`) and push events as `{"e":<method>,"p":<params>}`,
+     one JSON object per line. Reads AND network events share this one channel.
+   - **`--port <N>` (debug-port mode).** Launch Chrome with
+     `--remote-debugging-port=<N>`; serve attaches a WebSocket CDP client itself.
+     Simpler, but the port is reachable by any same-UID process — use only where
+     that is acceptable.
+2. Spawn `truefact serve (--cdp-fd <N> | --port <N>) [--jsonl run.jsonl] [--api-origins a,b] [--body-errors]`.
    It prints `{"ok":true,"ready":true}` once attached.
 3. One JSON object per line, request → reply, strictly one bracket at a time:
 

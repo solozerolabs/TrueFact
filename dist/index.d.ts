@@ -1,6 +1,7 @@
 import type { ActResult, Action, Stagehand, StagehandClientActOptions } from "@browserbasehq/stagehand";
 import { type Fingerprint, type SessionEvidence } from "./session.js";
 import { sessionVerdict, type Postcondition, type Verdict } from "./postcondition.js";
+import type { CdpConn } from "./cdp.js";
 import { type Driver, type PageReader } from "./driver.js";
 import { applyDeclarations, validateDeclarations, type Declaration, type DeclaredResult } from "./declaration.js";
 import { groundValues, type Grounding, type GroundingReason } from "./grounding.js";
@@ -74,7 +75,8 @@ export interface TrueFactOptions {
     jsonl?: string;
     signingKey?: string;
     network?: {
-        port: number;
+        port?: number;
+        conn?: CdpConn;
         apiOrigins?: string[];
         bodyErrors?: boolean | RegExp;
     };

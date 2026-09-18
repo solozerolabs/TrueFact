@@ -14,24 +14,28 @@
 // serve verdict is the same verdict the wrapped Stagehand path certifies. The
 // agent's claim is never on this channel: `kind` is what the caller INTENDED
 // (write/nav), and the verdict is what the page and the network showed.
-import { cdpConnect } from "./cdp.js";
+import { cdpConnect, cdpConnectFd } from "./cdp.js";
 import { cdpDriver } from "./driver-cdp.js";
 import { withTrueFact } from "./index.js";
 /** Attach to Chrome on `port`; null when there is no DevTools endpoint. */
 export async function startServe(opts) {
-    const conn = await cdpConnect(opts.port);
+    const conn = opts.cdpFd !== undefined ? cdpConnectFd(opts.cdpFd) : await cdpConnect(opts.port ?? 0);
     if (!conn)
         return null;
     // One in-flight bracket at a time: `before` parks the pipeline inside
     // perform() until `after` arrives. A second `before` while parked is an error.
     let parked = null;
     let running = null;
-    const { port, apiOrigins, bodyErrors, ...replayOpts } = opts;
+    const { port, cdpFd, apiOrigins, bodyErrors, ...replayOpts } = opts;
+    void port;
+    void cdpFd;
     const w = withTrueFact(cdpDriver(conn, () => new Promise((resolve, reject) => {
         // before-state is captured by the time perform() runs (run() orders it so)
         parked.beforeDone();
         parked = { ...parked, resolve, reject };
-    })), { screenshots: false, ...replayOpts, network: { port, apiOrigins, bodyErrors } });
+    })), 
+    // ONE conn for reads AND network events — no second CDP client, no port.
+    { screenshots: false, ...replayOpts, network: { conn, apiOrigins, bodyErrors } });
     const close = async () => {
         await w.close();
         conn.close();
@@ -85,20 +89,24 @@ export async function runServeCli(argv, io = process) {
     for (let i = 0; i < argv.length; i++)
         if (argv[i].startsWith("--"))
             flags[argv[i].slice(2)] = argv[i + 1]?.startsWith("--") || argv[i + 1] === undefined ? "" : argv[++i];
-    const port = Number(flags.port);
-    if (!port) {
-        process.stderr.write("usage: truefact serve --port <n> [--jsonl run.jsonl] [--api-origins a.com,b.com] [--body-errors] [--screenshots]\n");
+    const port = flags.port ? Number(flags.port) : undefined;
+    const cdpFd = "cdp-fd" in flags ? Number(flags["cdp-fd"]) : undefined;
+    if (!port && cdpFd === undefined) {
+        process.stderr.write("usage: truefact serve (--cdp-fd <n> | --port <n>) [--jsonl run.jsonl] [--api-origins a.com,b.com] [--body-errors] [--screenshots]\n");
         return 2;
     }
     const session = await startServe({
         port,
+        cdpFd,
         jsonl: flags.jsonl || undefined,
         apiOrigins: flags["api-origins"] ? flags["api-origins"].split(",").map((s) => s.trim()).filter(Boolean) : undefined,
         bodyErrors: "body-errors" in flags,
         screenshots: "screenshots" in flags,
     });
     if (!session) {
-        process.stderr.write(`truefact serve: could not attach to Chrome on port ${port}.\n  Launch it with --remote-debugging-port=${port} first.\n`);
+        process.stderr.write(cdpFd !== undefined
+            ? `truefact serve: could not open CDP over fd ${cdpFd}.\n`
+            : `truefact serve: could not attach to Chrome on port ${port}.\n  Launch it with --remote-debugging-port=${port} first.\n`);
         return 2;
     }
     io.stdout.write(JSON.stringify({ ok: true, ready: true }) + "\n");
