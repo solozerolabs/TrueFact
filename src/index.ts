@@ -124,6 +124,7 @@ export function whyOf(step: Step): string {
   const p = step.evidence.postcondition;
   const net = p?.network?.errors?.[0];
   if (net) return `a request behind this write ${net.status == null ? "failed with no response" : "returned " + net.status} (${step.verdict})`;
+  if (p?.network?.pending) return `a request behind this write hadn't answered when we checked (${step.verdict})`;
   if (step.evidence.session.obstruction) return `blocked by ${step.evidence.session.obstruction} (${step.verdict})`;
   return `${step.verdict}${p ? " (" + p.reason + ")" : ""}`;
 }
@@ -487,7 +488,11 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
     // this (the cry-wolf guard); a split-origin write host opts in explicitly.
     if (sc) {
       const origins = [new URL(beforeState!.fp.href || "http://x").origin, ...(opts.network?.apiOrigins ?? [])];
-      await sc.settle(); // let any in-flight 2xx body reads land before we read
+      // Wait for THIS write's own in-flight requests to answer before judging,
+      // but only when the page read says landed — that's the sole verdict the
+      // network can overturn (an optimistic ✅ whose POST 500s late). settle()
+      // also drains 2xx body reads so a late 200-that-lies is seen.
+      const pending = await sc.settle(verdict === "landed" ? waitMs : 0, origins);
       const errors = sc.errorsSince(netMark, origins);
       const net = applyNetwork(verdict, errors);
       if (net) {
@@ -495,12 +500,24 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
         post.reason = net.reason;
         post.confidence = net.confidence;
         verdict = net.verdict;
+      } else if (verdict === "landed" && post.confidence === "heuristic" && pending > 0) {
+        // A watched write left the browser but never answered within the budget.
+        // An optimistic banner (`confirmation`/`form-cleared`, heuristic) can lie
+        // while its POST is still in flight — so we cannot call this landed. We
+        // also cannot call it did-not-land (it may yet succeed): inconclusive.
+        // High-confidence landings (navigation, a client-side field-match) and
+        // caller declarations are not optimistic in this way and are left alone.
+        post.verdict = "inconclusive";
+        post.reason = "unsettled";
+        post.confidence = "heuristic";
+        verdict = "inconclusive";
+        post.network = { errors: [], pending };
       }
-      // NB: the network only ever DEMOTES. It deliberately does not lift an
-      // uncertain verdict on a clean 2xx: a same-origin 2xx (a first-party
-      // analytics beacon) proves that request succeeded, never that THIS action's
-      // write did — lifting on it reintroduces false-landed. Shrink inconclusive
-      // the sound way: declare a postcondition (probe/text). See docs/FINDINGS.
+      // The network only ever DEMOTES. It deliberately does not lift an uncertain
+      // verdict on a clean 2xx: a same-origin 2xx (a first-party analytics beacon)
+      // proves that request succeeded, never that THIS action's write did —
+      // lifting on it reintroduces false-landed. Shrink inconclusive the sound
+      // way: declare a postcondition (probe/text). See docs/FINDINGS.
       if (errors.length) post.network = { errors };
     }
 

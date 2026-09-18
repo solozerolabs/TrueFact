@@ -50,6 +50,14 @@ export interface WriteOutcome {
 export interface WriteTracker {
   /** Await in-flight body reads (so a body-derived outcome has landed). */
   settle(): Promise<void>;
+  /** The current request sequence. Capture at an action's start (`mark`) so
+   *  `pendingWrites` counts only that action's own requests, not a straggler
+   *  from a previous step. */
+  seq(): number;
+  /** How many watched-origin mutating requests started at/after `sinceSeq` are
+   *  still awaiting a response — the writes we cannot yet call landed (an
+   *  optimistic ✅ whose POST is still in flight). */
+  pendingWrites(sinceSeq: number, watched: (url: string) => boolean): number;
 }
 
 /**
@@ -66,9 +74,11 @@ export function trackWrites(
 ): WriteTracker {
   const bodyRe = bodyErrorPattern(opts.bodyErrors);
   // requestId → what we know so far. Deleted the moment its outcome is emitted,
-  // so the map never grows without bound over a long-lived watch.
-  const reqOf = new Map<string, { url: string; method: string; status?: number }>();
+  // so the map never grows without bound over a long-lived watch. `seq` orders
+  // requests so a bracket can scope "still in flight" to its own writes.
+  const reqOf = new Map<string, { url: string; method: string; status?: number; seq: number }>();
   const inflight = new Set<Promise<void>>();
+  let seqNo = 0;
   const is2xx = (s: number) => s >= 200 && s < 300;
 
   const emit = (id: string, o: WriteOutcome): void => {
@@ -96,7 +106,7 @@ export function trackWrites(
 
   conn.on("Network.requestWillBeSent", (p) => {
     const req = p.request as { url?: string; method?: string } | undefined;
-    reqOf.set(p.requestId as string, { url: req?.url ?? "", method: req?.method ?? "GET" });
+    reqOf.set(p.requestId as string, { url: req?.url ?? "", method: req?.method ?? "GET", seq: ++seqNo });
   });
   conn.on("Network.responseReceived", (p) => {
     const id = p.requestId as string;
@@ -134,6 +144,13 @@ export function trackWrites(
   return {
     settle: async () => {
       await Promise.allSettled([...inflight]);
+    },
+    seq: () => seqNo,
+    pendingWrites: (sinceSeq, watched) => {
+      let n = 0;
+      for (const r of reqOf.values())
+        if (r.seq >= sinceSeq && r.status === undefined && MUTATING.has(r.method.toUpperCase()) && watched(r.url)) n++;
+      return n;
     },
   };
 }

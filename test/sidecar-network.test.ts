@@ -20,6 +20,16 @@ const html = (postUrl: string) =>
      try{await fetch(${JSON.stringify(postUrl)},{method:'POST',keepalive:true});}catch(e){}
      document.getElementById('ok').textContent='✅ Order placed — #4242';};</script>`;
 
+// The truly optimistic shape: the ✅ paints AT ONCE and the POST is fired but not
+// awaited — so a verdict read the instant the banner appears sees a clean page and
+// a request still in flight (the §1 in-flight case).
+const htmlOpt = (postUrl: string) =>
+  `<!doctype html><meta charset=utf8><title>Checkout</title><h1>Checkout</h1>
+   <button id=place>Place order</button><p id=ok></p>
+   <script>document.getElementById('place').onclick=()=>{
+     fetch(${JSON.stringify(postUrl)},{method:'POST'}).catch(()=>{});
+     document.getElementById('ok').textContent='✅ Order placed — #4242';};</script>`;
+
 const listen = (s: Server) => new Promise<string>((r) => s.listen(0, "127.0.0.1", () => r(`http://127.0.0.1:${(s.address() as { port: number }).port}`)));
 const shut = (s: Server) => new Promise<void>((r) => { s.closeAllConnections?.(); s.close(() => r()); });
 
@@ -49,7 +59,9 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     // the response), so a 500 arrives as responseReceived(500), not a wire fail.
     third = createServer((req, res) => {
       res.setHeader("access-control-allow-origin", "*");
-      return req.url === "/boom" ? res.writeHead(500).end("x") : res.writeHead(404).end();
+      if (req.url === "/boom") return res.writeHead(500).end("x");
+      if (req.url === "/slow-boom") return void setTimeout(() => res.writeHead(500).end("x"), 1500); // a slow cross-origin 500
+      return res.writeHead(404).end();
     });
     thirdBase = await listen(third);
     let flaky = 0;
@@ -57,6 +69,11 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
       if (req.method === "POST" && req.url === "/submit") return res.writeHead(500).end("upstream exploded");
       if (req.method === "POST" && req.url === "/declined") return res.writeHead(402, { "content-type": "application/json" }).end('{"error":"card declined"}');
       if (req.method === "POST" && req.url === "/ok") return res.writeHead(200, { "content-type": "application/json" }).end("{}");
+      // §1 in-flight cases: a write that answers (or never does) AFTER the banner.
+      if (req.method === "POST" && req.url === "/slow-reject") return void setTimeout(() => res.writeHead(500).end("late boom"), 800);
+      if (req.method === "POST" && req.url === "/slow-ok") return void setTimeout(() => res.writeHead(200, { "content-type": "application/json" }).end("{}"), 800);
+      if (req.method === "POST" && req.url === "/never") return; // hold the socket open — a write that never answers
+      if (req.method === "POST" && req.url === "/slow-body") { res.writeHead(200, { "content-type": "application/json" }); res.write("{"); setTimeout(() => res.end("}"), 1500); return; } // 2xx headers now, body later
       if (req.method === "POST" && req.url === "/gql-err") return res.writeHead(200, { "content-type": "application/json" }).end('{"data":null,"errors":[{"message":"mutation rejected"}]}');
       if (req.method === "POST" && req.url === "/flaky") return res.writeHead(flaky++ === 0 ? 500 : 200, { "content-type": "application/json" }).end("{}");
       // 200, then the body load is canceled (navigation/beacon shape): send a
@@ -65,6 +82,12 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
       if (req.url === "/optimistic") return res.writeHead(200, { "content-type": "text/html" }).end(html("/submit"));
       if (req.url === "/declined-checkout") return res.writeHead(200, { "content-type": "text/html" }).end(html("/declined"));
       if (req.url === "/clean") return res.writeHead(200, { "content-type": "text/html" }).end(html("/ok"));
+      // Optimistic pages (✅ at once, POST not awaited) for the §1 in-flight tests.
+      if (req.url === "/slow-reject-co") return res.writeHead(200, { "content-type": "text/html" }).end(htmlOpt("/slow-reject"));
+      if (req.url === "/slow-ok-co") return res.writeHead(200, { "content-type": "text/html" }).end(htmlOpt("/slow-ok"));
+      if (req.url === "/never-co") return res.writeHead(200, { "content-type": "text/html" }).end(htmlOpt("/never"));
+      if (req.url === "/slow-body-co") return res.writeHead(200, { "content-type": "text/html" }).end(htmlOpt("/slow-body"));
+      if (req.url === "/slow-third-co") return res.writeHead(200, { "content-type": "text/html" }).end(htmlOpt(`${thirdBase}/slow-boom`));
       if (req.url === "/gql") return res.writeHead(200, { "content-type": "text/html" }).end(html("/gql-err"));
       if (req.url === "/thirdparty") return res.writeHead(200, { "content-type": "text/html" }).end(html(`${thirdBase}/boom`));
       if (req.url === "/truncate-checkout") return res.writeHead(200, { "content-type": "text/html" }).end(html("/truncate"));
@@ -193,5 +216,52 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     assert.equal(step.verdict, "did-not-land");
     assert.equal(step.evidence.postcondition?.reason, "network-error");
     assert.equal(step.evidence.postcondition?.network?.errors[0]?.status, 500);
+  });
+
+  // §1 — a write still in flight when the optimistic banner appears. The verdict
+  // must wait for it (bounded), then never read `landed` on an unanswered write.
+  const runInflight = async (route: string, waitMs: number, apiOrigins?: string[]) => {
+    const page = (await sh.browser.context.activePage())!;
+    const fake = fakeStagehand(sh, page, { actions: [{ selector: "#place" }] });
+    const w = withTrueFact(fake, { network: { port: PORT, apiOrigins }, screenshots: false, waitMs });
+    await w.page.goto(`${base}/${route}`);
+    const t = Date.now();
+    await w.act("place the order");
+    const ms = Date.now() - t;
+    await w.close();
+    return { step: w.replay.steps.at(-1)!, ms };
+  };
+
+  it("in-flight: ✅ shown at once but the POST 500s a beat later → did-not-land (the false-landed §1 closes)", async () => {
+    const { step } = await runInflight("slow-reject-co", 2000);
+    assert.equal(step.verdict, "did-not-land");
+    assert.equal(step.evidence.postcondition?.reason, "network-error");
+    assert.equal(step.evidence.postcondition?.network?.errors[0]?.status, 500);
+  });
+
+  it("in-flight: ✅ shown at once and the POST 200s a beat later → stays landed (the wait does not false-halt a slow success)", async () => {
+    const { step } = await runInflight("slow-ok-co", 2000);
+    assert.equal(step.verdict, "landed");
+    assert.equal(step.evidence.postcondition?.reason, "confirmation");
+    assert.equal(step.evidence.postcondition?.network, undefined);
+  });
+
+  it("in-flight: a watched write that never answers within the budget → inconclusive/unsettled, never landed, never did-not-land", async () => {
+    const { step } = await runInflight("never-co", 600);
+    assert.equal(step.verdict, "inconclusive");
+    assert.equal(step.evidence.postcondition?.reason, "unsettled");
+    assert.ok((step.evidence.postcondition?.network?.pending ?? 0) > 0);
+  });
+
+  it("in-flight: a slow write to a THIRD origin (not in apiOrigins) never holds the bracket — stays landed, no wait (cry-wolf + latency guard)", async () => {
+    const { step, ms } = await runInflight("slow-third-co", 2000);
+    assert.equal(step.verdict, "landed");
+    assert.ok(ms < 1400, `bracket waited ${ms}ms for an unwatched third-party write`); // < the 1500ms server delay
+  });
+
+  it("in-flight: a 2xx whose HEADERS arrive at once but body streams later resolves at headers — landed, no wait for the body", async () => {
+    const { step, ms } = await runInflight("slow-body-co", 2000);
+    assert.equal(step.verdict, "landed");
+    assert.ok(ms < 1400, `bracket waited ${ms}ms for a 2xx body`); // < the 1500ms body delay
   });
 });

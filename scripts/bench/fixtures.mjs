@@ -11,6 +11,7 @@ export const TASKS = [
   { id: "clean-checkout", lands: true, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed? Answer from what the page shows." },
   { id: "overlay-checkout", lands: true, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed? Answer from what the page shows." },
   { id: "optimistic-ui", lands: false, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed successfully?" },
+  { id: "slow-reject", lands: false, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed successfully?" },
   { id: "expired-session", lands: false, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed, or is a sign-in required?" },
   { id: "captcha-gate", lands: false, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed, or is a verification challenge shown?" },
   { id: "validation-reject", lands: false, instruction: "click the 'Place order' button", completionQuestion: "Was the order placed?" },
@@ -60,6 +61,13 @@ const PAGES = {
   // POST returns 500, server records FAILED; the banner lies to the user anyway.
   "optimistic-ui": () =>
     shell("Checkout", `<h1>Checkout</h1><p><b>Deluxe Widget</b> — $49.00</p><button id="place" type="button">Place order</button><p id="ok"></p>`, placeScript("optimistic-ui")),
+
+  // The nastier optimistic case: the banner paints at once, but the POST does not
+  // 500 until ~1.2 s later. A verdict read the instant the ✅ appears sees a clean
+  // page and no error yet — the false-landed the in-flight wait (§1) must catch.
+  "slow-reject": () =>
+    shell("Checkout", `<h1>Checkout</h1><p><b>Deluxe Widget</b> — $49.00</p><button id="place" type="button">Place order</button><p id="ok"></p>`,
+      `<script>document.getElementById('place').onclick=()=>{fetch('/submit?task=slow-reject',{method:'POST'}).catch(()=>{});document.getElementById('ok').textContent='✅ Order placed — confirmation #4242';};</script>`),
 
   // The click navigates to a 401 login wall; no POST is ever sent.
   "expired-session": () =>
@@ -143,6 +151,13 @@ export async function startFixtures() {
       if (task === "optimistic-ui") {
         res.writeHead(500, { "content-type": "application/json" });
         return res.end('{"ok":false,"error":"payment declined"}'); // recorded as NOT landed
+      }
+      if (task === "slow-reject") {
+        // The write is rejected, but only after the banner has already lied.
+        return void setTimeout(() => {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end('{"ok":false,"error":"payment declined"}');
+        }, 1200);
       }
       landed.set(task, true);
       res.writeHead(200, { "content-type": "application/json" });

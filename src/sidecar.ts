@@ -21,10 +21,14 @@ export interface SidecarOptions {
 }
 
 export interface Sidecar {
-  /** How many outcomes have been seen so far — the start of an action's window. */
+  /** How many outcomes have been seen so far — the start of an action's window.
+   *  Also snapshots the request sequence so `settle` scopes in-flight writes to
+   *  this action. */
   mark(): number;
-  /** Await in-flight body reads so a late 2xx-that-lies has landed before read. */
-  settle(): Promise<void>;
+  /** Wait up to `budgetMs` for this action's own in-flight watched writes to
+   *  answer, drain any 2xx body reads, and return how many writes are still
+   *  unresolved — the ones we cannot call landed. */
+  settle(budgetMs: number, origins: string[]): Promise<number>;
   /** Errors on a watched origin since `mark`, after retry-collapse. */
   errorsSince(mark: number, origins: string[]): NetError[];
   close(): void;
@@ -55,10 +59,31 @@ export async function attachSidecarConn(conn: CdpConn, opts: SidecarOptions & { 
 
   const key = (o: WriteOutcome) => o.method + " " + o.url;
   const isError = (o: WriteOutcome) => o.bodyError || o.status == null || isWriteError(o.status, o.method);
+  const watchedOf = (origins: string[]) => {
+    const ok = new Set(origins.filter(Boolean));
+    return (u: string) => ok.has(originOf(u));
+  };
+  // Snapshot at mark(); the before→after contract keeps one bracket open at a
+  // time, so a single stored seq is enough (ponytail: serial use assumed).
+  let markSeq = 0;
 
   return {
-    mark: () => outcomes.length,
-    settle: () => tracker.settle(),
+    mark: () => {
+      markSeq = tracker.seq();
+      return outcomes.length;
+    },
+    settle: async (budgetMs, origins) => {
+      const watched = watchedOf(origins);
+      const start = Date.now();
+      // Wait for this action's own writes to answer, so an optimistic ✅ whose
+      // POST 500s a second later is caught rather than called landed. Only
+      // watched-origin mutations hold us, and only until they resolve — a fast
+      // site pays nothing; a slow reject pays exactly what correctness costs.
+      while (tracker.pendingWrites(markSeq, watched) > 0 && Date.now() - start < budgetMs)
+        await new Promise((r) => setTimeout(r, 50));
+      await tracker.settle(); // drain any 2xx body reads too
+      return tracker.pendingWrites(markSeq, watched);
+    },
     errorsSince: (mark, origins) => {
       const ok = new Set(origins.filter(Boolean));
       if (!ok.size) return [];

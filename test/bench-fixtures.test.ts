@@ -123,9 +123,9 @@ describe("bench fixtures: network sidecar catches optimistic-ui (recall lever)",
   });
   after(async () => { await browser?.close(); await fx?.close(); });
 
-  const drive = async (task: string, action: { selector: string; method?: string; arguments?: string[] }) => {
+  const drive = async (task: string, action: { selector: string; method?: string; arguments?: string[] }, waitMs = 900) => {
     await fx.reset();
-    const w = withTrueFact(playwrightDriver(page), { network: { port }, screenshots: false, waitMs: 900 });
+    const w = withTrueFact(playwrightDriver(page), { network: { port }, screenshots: false, waitMs });
     await w.page.goto(fx.url(task));
     await w.act(action);
     const stp = [...w.replay.steps].reverse().find((s) => s.kind === "write")!;
@@ -145,5 +145,12 @@ describe("bench fixtures: network sidecar catches optimistic-ui (recall lever)",
     const { step, truth } = await drive("clean-checkout", { selector: "#place", method: "click" });
     assert.equal(truth.landed, true);
     assert.notEqual(step.verdict, "did-not-land");
+  });
+
+  it("slow-reject: the 500 arrives AFTER the banner — the in-flight wait (§1) still catches it → did-not-land", async () => {
+    const { step, truth } = await drive("slow-reject", { selector: "#place", method: "click" }, 2500);
+    assert.equal(truth.landed, false);
+    assert.equal(step.verdict, "did-not-land");
+    assert.equal(step.evidence.postcondition?.reason, "network-error");
   });
 });

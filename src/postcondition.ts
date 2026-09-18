@@ -70,7 +70,7 @@ export interface Postcondition extends Outcome {
   formsAfter: Record<string, FormValue>;
   field?: { selector: string; expected: string; actual: string | null };
   declared?: DeclaredResult[];
-  network?: { errors: { url: string; status: number | null }[] }; // same-origin 5xx/failed in the write window
+  network?: { errors: { url: string; status: number | null }[]; pending?: number }; // same-origin 5xx/failed in the write window; `pending` = watched writes unresolved at close
 }
 
 const EMPTY_FP: Fingerprint = { href: "", readyState: "", bodyTextLength: 0, elementCount: 0, title: "" };
