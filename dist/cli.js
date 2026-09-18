@@ -6,6 +6,7 @@
 //   truefact view   <run.jsonl>
 //   truefact fleet  <run.jsonl...>
 //   truefact gate   <run.jsonl...> [--max-did-not-land 0.05]
+//   truefact demo   — the optimistic-UI catch, keyless, in one command
 //
 // `assert` re-runs an assertion module against a recorded run, offline, and
 // exits 1 if any write step fails — a CI gate over stored runs. `verify`
@@ -119,12 +120,17 @@ async function main(argv) {
         const { files, flags } = parseArgs(argv.slice(1));
         return gateCmd(files, flags);
     }
+    if (cmd === "demo") {
+        const { runDemo } = await import("./demo.js");
+        return runDemo();
+    }
     process.stderr.write("usage:\n" +
         "  truefact assert <run.jsonl> --with <assertions.mjs>\n" +
         "  truefact verify <run.jsonl> [--pubkey <key.pem>]\n" +
         "  truefact view   <run.jsonl>\n" +
         "  truefact fleet  <run.jsonl...>\n" +
-        "  truefact gate   <run.jsonl...> [--max-did-not-land 0.05]\n");
+        "  truefact gate   <run.jsonl...> [--max-did-not-land 0.05]\n" +
+        "  truefact demo\n");
     return 2;
 }
 main(process.argv.slice(2)).then((code) => process.exit(code), (e) => {
