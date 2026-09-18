@@ -50,7 +50,7 @@ const PAGE = (dataJson, title) => `<!doctype html>
 <script>
 const steps = window.__STEPS__ || [];
 const $ = (s)=>document.querySelector(s);
-const esc = (s)=>String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const esc = (s)=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const writes = steps.filter(s=>s.kind==="write");
 const rolled = writes.some(s=>s.verdict==="did-not-land")?"did-not-land":writes.some(s=>s.verdict==="inconclusive")?"inconclusive":writes.length?"landed":"—";
 $("#meta").textContent = steps.length+" steps · "+writes.length+" writes · run verdict: "+rolled;

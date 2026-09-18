@@ -26,6 +26,7 @@ import { dirname } from "node:path";
 import { cdpConnect } from "./cdp.js";
 import { originOf, isWriteError, trackWrites } from "./netwatch.js";
 import { hashStep, makeSigner } from "./chain.js";
+import { redactText } from "./redact.js";
 import type { Step } from "./index.js";
 import type { Verdict, PostReason } from "./postcondition.js";
 
@@ -192,9 +193,12 @@ export async function startWatch(opts: WatchOptions): Promise<WatchSession | nul
 // null (watch has no DOM bracket); the network evidence carries the outcome.
 function buildStep(o: WriteObservation, prevHash: string, sign: ((h: string) => string) | null): Step {
   const outcome = { verdict: o.verdict, reason: o.reason, confidence: "high" as const };
+  // A watched write URL can carry a token/PII in its path or query
+  // (POST /reset?token=…). Scrub every stored string, like the wrapped path.
+  const url = redactText(o.url);
   const step: Step = {
     kind: "write",
-    action: `${o.method} ${pathOf(o.url)}`,
+    action: redactText(`${o.method} ${pathOf(o.url)}`),
     declaration: "auto",
     verdict: o.verdict,
     evidence: {
@@ -211,7 +215,7 @@ function buildStep(o: WriteObservation, prevHash: string, sign: ((h: string) => 
         treeRemoved: [],
         formsBefore: {},
         formsAfter: {},
-        ...(o.verdict === "did-not-land" ? { network: { errors: [{ url: o.url, status: o.status }] } } : {}),
+        ...(o.verdict === "did-not-land" ? { network: { errors: [{ url, status: o.status }] } } : {}),
       },
     },
     attempt: null,

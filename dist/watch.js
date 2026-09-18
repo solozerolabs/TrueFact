@@ -26,6 +26,7 @@ import { dirname } from "node:path";
 import { cdpConnect } from "./cdp.js";
 import { originOf, isWriteError, trackWrites } from "./netwatch.js";
 import { hashStep, makeSigner } from "./chain.js";
+import { redactText } from "./redact.js";
 // Observe mode has no act() bracket to tie a failure to the agent's intent, so
 // its passive verdict is deliberately narrower than wrapped mode's: auth
 // failures (401/403) are dropped entirely — pervasive as background token/JWT
@@ -159,9 +160,12 @@ export async function startWatch(opts) {
 // null (watch has no DOM bracket); the network evidence carries the outcome.
 function buildStep(o, prevHash, sign) {
     const outcome = { verdict: o.verdict, reason: o.reason, confidence: "high" };
+    // A watched write URL can carry a token/PII in its path or query
+    // (POST /reset?token=…). Scrub every stored string, like the wrapped path.
+    const url = redactText(o.url);
     const step = {
         kind: "write",
-        action: `${o.method} ${pathOf(o.url)}`,
+        action: redactText(`${o.method} ${pathOf(o.url)}`),
         declaration: "auto",
         verdict: o.verdict,
         evidence: {
@@ -178,7 +182,7 @@ function buildStep(o, prevHash, sign) {
                 treeRemoved: [],
                 formsBefore: {},
                 formsAfter: {},
-                ...(o.verdict === "did-not-land" ? { network: { errors: [{ url: o.url, status: o.status }] } } : {}),
+                ...(o.verdict === "did-not-land" ? { network: { errors: [{ url, status: o.status }] } } : {}),
             },
         },
         attempt: null,

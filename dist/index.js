@@ -60,6 +60,9 @@ class ReplayImpl {
     }
 }
 const actionText = (a) => (typeof a === "string" ? a : JSON.stringify(a));
+// A selector that targets a password field, for masking a typed secret in a
+// multi-field step where the field read (which covers only actions[0]) can't.
+const looksPassword = (sel = "") => /password|passwd|(?:^|[^a-z])pwd(?:[^a-z]|$)/i.test(sel);
 const statusOf = (r) => r && typeof r.status === "function" ? r.status() : null;
 const costOf = (claim, model) => {
     const u = claim?.metadata?.usage;
@@ -127,7 +130,14 @@ function redactStep(step, redactFields) {
     if (step.agent_claim)
         step.agent_claim = { ...step.agent_claim, message: redactText(step.agent_claim.message) };
     if (step.attempt)
-        step.attempt = step.attempt.map((a) => a.arguments?.length ? { ...a, arguments: a.arguments.map(redactText) } : a);
+        step.attempt = step.attempt.map((a) => {
+            const desc = a.description;
+            return {
+                ...a,
+                ...(a.arguments?.length ? { arguments: a.arguments.map(redactText) } : {}),
+                ...(desc ? { description: redactText(desc) } : {}),
+            };
+        });
     if (step.evidence.grounding)
         step.evidence.grounding.values = step.evidence.grounding.values.map((v) => ({ ...v, value: redactText(v.value) }));
     const declared = (key) => !!redactFields?.some((r) => (typeof r === "string" ? r === key : r.test(key)));
@@ -158,6 +168,11 @@ function redactStep(step, redactFields) {
         post.treeRemoved = post.treeRemoved.map(redactText);
         if (post.network)
             post.network.errors = post.network.errors.map((e) => ({ ...e, url: redactText(e.url) }));
+        // A redirect URL and a declaration's observed value are stored strings too.
+        if (post.newPageUrl)
+            post.newPageUrl = redactText(post.newPageUrl);
+        if (post.declared)
+            post.declared = post.declared.map((r) => (r.actual == null ? r : { ...r, actual: redactText(r.actual) }));
     }
     return step;
 }
@@ -166,8 +181,13 @@ export function withTrueFact(source, opts = {}) {
     const driver = "activePage" in source && "readerFor" in source ? source : stagehandDriver(source);
     const screenshotDir = opts.screenshotDir ?? ".truefact/screenshots";
     const defaultWait = opts.waitMs ?? 5000;
-    if (opts.jsonl)
+    // Truncate at the start of the run: a run owns its file and appends one line
+    // per step, so a fresh chain always begins at prevHash "". Re-running the same
+    // path used to concatenate runs into a chain that verify() reports as broken.
+    if (opts.jsonl) {
         mkdirSync(dirname(opts.jsonl), { recursive: true });
+        writeFileSync(opts.jsonl, "");
+    }
     // Redact, chain, sign, push in memory, and (if configured) append one JSONL
     // line — so the stored record survives a crashed run and always matches
     // what's in memory. The hash is computed AFTER redaction, so a stored line
@@ -301,10 +321,18 @@ export function withTrueFact(source, opts = {}) {
             if (errors.length)
                 post.network = { errors };
         }
+        // Length-mask the typed value of EVERY action that targeted a password
+        // field, not just actions[0] (fill-username-then-password lands the secret in
+        // attempt[1]). A plain password isn't secret-shaped, so redactText misses it;
+        // detect actions[0] from the field read and the rest from the selector (the
+        // field itself may be gone after a submit+navigate).
         let attempt = actions;
-        if (attempt && decision.isPassword) {
-            attempt = attempt.map((a, i) => i === 0 && a.arguments?.length ? { ...a, arguments: [redactLen(a.arguments[0]), ...a.arguments.slice(1)] } : a);
-            if (post.field)
+        if (attempt) {
+            attempt = attempt.map((a, i) => {
+                const isPw = a.arguments?.length && ((i === 0 && decision.isPassword) || looksPassword(a.selector));
+                return isPw ? { ...a, arguments: [redactLen(a.arguments[0]), ...a.arguments.slice(1)] } : a;
+            });
+            if (decision.isPassword && post.field)
                 post.field = { ...post.field, expected: redactLen(post.field.expected), actual: post.field.actual == null ? null : redactLen(post.field.actual) };
         }
         const screenshot = await snap(page); // after the verdict — the picture shows what decided it

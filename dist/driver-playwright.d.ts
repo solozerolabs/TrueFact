@@ -50,7 +50,7 @@ interface AxNode {
  */
 export declare function axToLines(nodes: AxNode[]): string[];
 /** Adapt one Playwright Page to the PageReader surface. Its tree comes from
- *  CDP; every other read is Playwright-native. */
+ *  CDP; every other read is Playwright-native. Memoized per page. */
 export declare function playwrightReader(page: PwPage): PageReader;
 /**
  * Adapt a Playwright Page to the Driver surface. `act` takes an action object

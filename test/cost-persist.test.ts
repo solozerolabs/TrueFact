@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { withTrueFact, type Step } from "../src/index.js";
+import { withTrueFact, verifyChain, type Step } from "../src/index.js";
 import { redactText } from "../src/redact.js";
 import { fakeStagehand, withBrowser, serve, type Fixture } from "./helpers.js";
 
@@ -51,6 +51,21 @@ describe("withTrueFact: cost + jsonl", () => {
     assert.equal(lines.length, replay.steps.length);
     const persisted = lines.find((s) => s.kind === "write")!;
     assert.deepEqual(persisted, write);
+  });
+
+  it("re-running the same jsonl path truncates it — a fresh, valid chain, never concatenated runs", async () => {
+    const runOnce = async () => {
+      const sh = fakeStagehand(await b.start(), await b.page(), { actions: [{ selector: "#go" }] });
+      const tr = withTrueFact(sh, { screenshots: false, jsonl });
+      await tr.page.goto(fx.base + "/f");
+      await tr.act("click go");
+      return tr.replay.steps.length;
+    };
+    await runOnce();
+    const secondLen = await runOnce(); // same path — must truncate, not append
+    const lines = readFileSync(jsonl, "utf8").trim().split("\n").map((l) => JSON.parse(l) as Step);
+    assert.equal(lines.length, secondLen, "the file holds only the second run, not both");
+    assert.equal(verifyChain(lines as never).ok, true, "the chain starts at prevHash '' and verifies");
   });
 
   it("redacts secret-shaped form values always, and length-masks declared fields (redactFields)", async () => {

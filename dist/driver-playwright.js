@@ -50,9 +50,16 @@ const idOf = (page) => {
         pageIds.set(page, (id = `pw-${nextId++}`));
     return id;
 };
+// One reader per Page, reused. driver.activePage() is called several times per
+// step; a fresh reader each time would open (and leak) a new CDP session with
+// Accessibility.enable on every read.
+const readers = new WeakMap();
 /** Adapt one Playwright Page to the PageReader surface. Its tree comes from
- *  CDP; every other read is Playwright-native. */
+ *  CDP; every other read is Playwright-native. Memoized per page. */
 export function playwrightReader(page) {
+    const cached = readers.get(page);
+    if (cached)
+        return cached;
     let cdp = null;
     const session = () => (cdp ??= page
         .context()
@@ -61,7 +68,7 @@ export function playwrightReader(page) {
         await s.send("Accessibility.enable");
         return s;
     }));
-    return {
+    const reader = {
         id: idOf(page),
         async snapshotTree() {
             try {
@@ -78,6 +85,8 @@ export function playwrightReader(page) {
         screenshot: () => page.screenshot(),
         waitForLoadState: (state, timeoutMs) => page.waitForLoadState(state, { timeout: timeoutMs }),
     };
+    readers.set(page, reader);
+    return reader;
 }
 /**
  * Adapt a Playwright Page to the Driver surface. `act` takes an action object

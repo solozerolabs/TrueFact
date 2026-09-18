@@ -116,6 +116,7 @@ describe("withTrueFact: postcondition end to end", () => {
         <select id="plan" name="plan"><option value="free">Free</option><option value="pro">Pro</option></select><button id="s" type="button">noop</button></main></body></html>`,
       // a new-password form is the Day 2 FP-guard case: a password field that is NOT a login wall
       "/pw": `<html><body><main><form><input id="p" name="pw" type="password" autocomplete="new-password"></form></main></body></html>`,
+      "/login2": `<html><body><main><form onsubmit="event.preventDefault()"><input id="user" name="user"><input id="password" name="password" type="password"><button id="s" type="submit">Sign in</button></form></main></body></html>`,
       "/mixed": `<html><body><main><form id="f" onsubmit="event.preventDefault()"><input name="email" required><input id="note" name="note"><button id="s" type="submit">Save</button></form></main></body></html>`,
       // value set by script, not the attribute, so form.reset() actually clears it
       "/reset": `<html><body><main><form id="f" onsubmit="event.preventDefault();this.reset()"><input name="email"><button id="s" type="submit">Go</button></form><script>document.querySelector('[name=email]').value='a@b.co'</script></main></body></html>`,
@@ -271,6 +272,16 @@ describe("withTrueFact: postcondition end to end", () => {
     assert.ok(!JSON.stringify(s).includes("hunter2secret"));
     assert.equal(s.attempt?.[0].arguments?.[0], "<redacted:13>");
     assert.equal(s.evidence.postcondition?.field?.expected, "<redacted:13>");
+  });
+
+  it("password in a LATER action of a multi-fill step is masked too, never just actions[0]", async () => {
+    await go("/login2");
+    const s = await runAct({ actions: [
+      { selector: "#user", method: "fill", args: ["ada"] },
+      { selector: "#password", method: "fill", args: ["s3cr3t-pw-9"] },
+    ] });
+    assert.ok(!JSON.stringify(s).includes("s3cr3t-pw-9"), "the password typed in attempt[1] must not be stored plain");
+    assert.equal(s.attempt?.[1].arguments?.[0], "<redacted:11>");
   });
 
   it("R1: fill then click submit with a required field empty -> did-not-land / validation-error, not field-match", async () => {
