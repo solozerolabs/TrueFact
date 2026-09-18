@@ -14,6 +14,8 @@
   ],
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
+    "prepublishOnly": "tsc",
     "test": "node --import tsx --test-concurrency=1 --test \"test/*.test.ts\"",
     "probe": "node scripts/probe-stagehand.mjs",
     "probe:act": "node --env-file=.env scripts/probe-overlay-act.mjs",
