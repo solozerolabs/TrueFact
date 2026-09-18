@@ -10,12 +10,12 @@
 
 export interface NetError {
   url: string;
-  status: number | null; // null = the request failed on the wire (Network.loadingFailed)
+  status: number | null; // null = a mutating request failed on the wire (Network.loadingFailed)
 }
 
 export interface Sidecar {
   mark(): number; // an opaque cursor into the event stream, taken before a write
-  errorsSince(mark: number, origin: string): NetError[]; // same-origin 5xx / failed since the cursor
+  errorsSince(mark: number, origin: string): NetError[]; // same-origin write errors (5xx any / 4xx on POST-like / failed) since the cursor
   close(): void;
 }
 
@@ -26,6 +26,15 @@ const originOf = (u: string): string => {
     return "";
   }
 };
+
+// A write is a mutation. A 4xx on a POST/PUT/PATCH/DELETE means the server
+// rejected the write (402 declined, 422 invalid, 429 throttled, 401/403 auth) —
+// the common "did-not-land behind an optimistic ✅" that a 5xx-only reader
+// misses. A 4xx on a GET is noise (a missing image, a probed 404), so those
+// never demote. 5xx stays method-agnostic: a server crash fails any write.
+const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const isWriteError = (status: number, method: string): boolean =>
+  status >= 500 || (status >= 400 && status < 500 && MUTATING.has(method.toUpperCase()));
 
 /**
  * Attach a network-observing sidecar to the Chrome listening on `port`
@@ -52,8 +61,9 @@ export async function attachSidecar(port: number): Promise<Sidecar | null> {
       ws.onerror = () => rej(new Error("sidecar ws connect failed"));
     });
 
-    // requestId → url, so a later loadingFailed (which carries no url) resolves.
-    const urlOf = new Map<string, string>();
+    // requestId → {url, method}, so responseReceived can class the status by
+    // method and a later loadingFailed (which carries neither) can resolve both.
+    const reqOf = new Map<string, { url: string; method: string }>();
     const events: NetError[] = [];
     ws.onmessage = (m: MessageEvent) => {
       let msg: { method?: string; params?: Record<string, unknown> };
@@ -64,13 +74,18 @@ export async function attachSidecar(port: number): Promise<Sidecar | null> {
       }
       const p = msg.params ?? {};
       if (msg.method === "Network.requestWillBeSent") {
-        urlOf.set(p.requestId as string, ((p.request as { url?: string })?.url) ?? "");
+        const req = p.request as { url?: string; method?: string } | undefined;
+        reqOf.set(p.requestId as string, { url: req?.url ?? "", method: req?.method ?? "GET" });
       } else if (msg.method === "Network.responseReceived") {
         const r = p.response as { url?: string; status?: number } | undefined;
-        if (r && typeof r.status === "number" && r.status >= 500) events.push({ url: r.url ?? "", status: r.status });
+        const method = reqOf.get(p.requestId as string)?.method ?? "GET";
+        if (r && typeof r.status === "number" && isWriteError(r.status, method))
+          events.push({ url: r.url ?? "", status: r.status });
       } else if (msg.method === "Network.loadingFailed") {
-        const url = urlOf.get(p.requestId as string) ?? "";
-        if (url) events.push({ url, status: null });
+        // A request that never got a response. Only a mutating one signals a
+        // failed write; a dropped GET (tracker, aborted image) is noise.
+        const req = reqOf.get(p.requestId as string);
+        if (req?.url && MUTATING.has(req.method.toUpperCase())) events.push({ url: req.url, status: null });
       }
     };
 

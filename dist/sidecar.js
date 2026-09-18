@@ -15,6 +15,13 @@ const originOf = (u) => {
         return "";
     }
 };
+// A write is a mutation. A 4xx on a POST/PUT/PATCH/DELETE means the server
+// rejected the write (402 declined, 422 invalid, 429 throttled, 401/403 auth) —
+// the common "did-not-land behind an optimistic ✅" that a 5xx-only reader
+// misses. A 4xx on a GET is noise (a missing image, a probed 404), so those
+// never demote. 5xx stays method-agnostic: a server crash fails any write.
+const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const isWriteError = (status, method) => status >= 500 || (status >= 400 && status < 500 && MUTATING.has(method.toUpperCase()));
 /**
  * Attach a network-observing sidecar to the Chrome listening on `port`
  * (the browser must have been launched with `localBrowser.launch({ port })`).
@@ -36,8 +43,9 @@ export async function attachSidecar(port) {
             ws.onopen = () => res();
             ws.onerror = () => rej(new Error("sidecar ws connect failed"));
         });
-        // requestId → url, so a later loadingFailed (which carries no url) resolves.
-        const urlOf = new Map();
+        // requestId → {url, method}, so responseReceived can class the status by
+        // method and a later loadingFailed (which carries neither) can resolve both.
+        const reqOf = new Map();
         const events = [];
         ws.onmessage = (m) => {
             let msg;
@@ -49,17 +57,21 @@ export async function attachSidecar(port) {
             }
             const p = msg.params ?? {};
             if (msg.method === "Network.requestWillBeSent") {
-                urlOf.set(p.requestId, (p.request?.url) ?? "");
+                const req = p.request;
+                reqOf.set(p.requestId, { url: req?.url ?? "", method: req?.method ?? "GET" });
             }
             else if (msg.method === "Network.responseReceived") {
                 const r = p.response;
-                if (r && typeof r.status === "number" && r.status >= 500)
+                const method = reqOf.get(p.requestId)?.method ?? "GET";
+                if (r && typeof r.status === "number" && isWriteError(r.status, method))
                     events.push({ url: r.url ?? "", status: r.status });
             }
             else if (msg.method === "Network.loadingFailed") {
-                const url = urlOf.get(p.requestId) ?? "";
-                if (url)
-                    events.push({ url, status: null });
+                // A request that never got a response. Only a mutating one signals a
+                // failed write; a dropped GET (tracker, aborted image) is noise.
+                const req = reqOf.get(p.requestId);
+                if (req?.url && MUTATING.has(req.method.toUpperCase()))
+                    events.push({ url: req.url, status: null });
             }
         };
         let id = 0;

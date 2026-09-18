@@ -48,8 +48,10 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     const thirdBase = await listen(third);
     app = createServer((req, res) => {
       if (req.method === "POST" && req.url === "/submit") return res.writeHead(500).end("upstream exploded");
+      if (req.method === "POST" && req.url === "/declined") return res.writeHead(402, { "content-type": "application/json" }).end('{"error":"card declined"}');
       if (req.method === "POST" && req.url === "/ok") return res.writeHead(200, { "content-type": "application/json" }).end("{}");
       if (req.url === "/optimistic") return res.writeHead(200, { "content-type": "text/html" }).end(html("/submit"));
+      if (req.url === "/declined-checkout") return res.writeHead(200, { "content-type": "text/html" }).end(html("/declined"));
       if (req.url === "/clean") return res.writeHead(200, { "content-type": "text/html" }).end(html("/ok"));
       if (req.url === "/thirdparty") return res.writeHead(200, { "content-type": "text/html" }).end(html(`${thirdBase}/boom`));
       return res.writeHead(404).end("no");
@@ -64,7 +66,7 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     await shut(third);
   });
 
-  const run = async (route: "optimistic" | "clean" | "thirdparty") => {
+  const run = async (route: "optimistic" | "declined-checkout" | "clean" | "thirdparty") => {
     const page = (await sh.browser.context.activePage())!;
     const fake = fakeStagehand(sh, page, { actions: [{ selector: "#place" }] });
     const w = withTrueFact(fake, { network: { port: PORT }, screenshots: false, waitMs: 600 });
@@ -79,6 +81,21 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     assert.equal(step.verdict, "did-not-land");
     assert.equal(step.evidence.postcondition?.reason, "network-error");
     assert.equal(step.evidence.postcondition?.network?.errors[0]?.status, 500);
+  });
+
+  it("declined: page shows ✅ but the POST returned 402 — 4xx on a write demotes to did-not-land", async () => {
+    const step = await run("declined-checkout");
+    assert.equal(step.verdict, "did-not-land");
+    assert.equal(step.evidence.postcondition?.reason, "network-error");
+    assert.equal(step.evidence.postcondition?.network?.errors[0]?.status, 402);
+  });
+
+  it("cry-wolf guard: a 4xx on a GET (the fixture's 404 for /favicon.ico etc.) never demotes — proven by the clean run staying landed", async () => {
+    // /clean POSTs to /ok (200); the browser also GETs the page + any 404s.
+    // If 4xx-on-GET demoted, this would flip. It must stay landed.
+    const step = await run("clean");
+    assert.equal(step.verdict, "landed");
+    assert.equal(step.evidence.postcondition?.network, undefined);
   });
 
   it("clean: same click, /ok 200 — the page-read verdict stands, no network demotion", async () => {
