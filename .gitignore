@@ -3,6 +3,7 @@ dist/
 .truereplay/
 *.log
 .env
+OUTREACH.md
 bench/out/*
 !bench/out/report.md
 !bench/out/report.json
