@@ -5,6 +5,7 @@
 // supplies the port that path already uses.)
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { launch, verifyChain } from "../src/index.js";
 import { serve, type Fixture } from "./helpers.js";
 
@@ -17,13 +18,17 @@ describe("launch: zero-config browser + network verification", () => {
     await fx.close();
   });
 
-  it("launches, records a navigation into a valid chain, and closes cleanly", async () => {
-    const tr = await launch({ headless: true, screenshots: false });
+  it("launches, records a signed navigation into a valid chain, and closes cleanly", async () => {
+    const kp = generateKeyPairSync("ed25519");
+    const priv = kp.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const pub = kp.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const tr = await launch({ headless: true, screenshots: false, signingKey: priv });
     try {
       await tr.page.goto(`${fx.base}/p`);
       assert.ok(tr.replay.steps.length >= 1);
       assert.equal(tr.replay.steps[0].kind, "nav");
-      assert.equal(verifyChain(tr.replay.steps).ok, true);
+      assert.ok(tr.replay.steps[0].sig, "the real writer signed the step");
+      assert.equal(verifyChain(tr.replay.steps, { publicKey: pub }).ok, true); // M9: signature checks out end to end
       assert.ok(tr.browser); // the handle it owns
     } finally {
       await tr.close(); // closes sidecar + browser; must not throw

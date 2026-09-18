@@ -23,7 +23,7 @@ import {
   type Verdict,
 } from "./postcondition.js";
 import { attachSidecar, type Sidecar } from "./sidecar.js";
-import { hashStep } from "./chain.js";
+import { hashStep, makeSigner } from "./chain.js";
 import {
   applyDeclarations,
   checkDeclarations,
@@ -50,9 +50,10 @@ export {
   type ReassertReport,
   type ReassertItem,
 } from "./assert.js";
-export { verifyChain, hashStep, canonical, type ChainResult } from "./chain.js";
+export { verifyChain, hashStep, canonical, makeSigner, verifyHashSig, type ChainResult } from "./chain.js";
 export { renderHtml, viewFile } from "./view.js";
 export { launch, type LaunchOptions, type Launched } from "./launch.js";
+export { summarizeRun, rollupRuns, type RunSummary, type FleetSummary } from "./fleet.js";
 export type StepKind = "write" | "read" | "nav";
 
 export interface Step {
@@ -104,6 +105,11 @@ export interface ReplayOptions {
   screenshotDir?: string; // default ".truereplay/screenshots"
   waitMs?: number; // one budget for the auto no-change poll and declared checks (default 5000)
   jsonl?: string; // if set, append one redacted step per line as the run proceeds
+  // ed25519 private key (PEM). When set — here or via TRUEREPLAY_SIGNING_KEY —
+  // each step is signed over its hash, and `truereplay verify --pubkey` can
+  // check the signature. Off by default; the hash chain alone still detects
+  // tamper. See docs/SPEC-V2.md §8.
+  signingKey?: string;
   // Opt-in network verification (M2). Attaches a second CDP client to the Chrome
   // launched with `localBrowser.launch({ port })` and demotes an optimistic write
   // (page ✅) to did-not-land when its own backend returned a same-origin 5xx.
@@ -226,15 +232,18 @@ export function withReplay(stagehand: Stagehand, opts: ReplayOptions = {}): Wrap
   const defaultWait = opts.waitMs ?? 5000;
   if (opts.jsonl) mkdirSync(dirname(opts.jsonl), { recursive: true });
 
-  // Redact, chain, push in memory, and (if configured) append one JSONL line —
-  // so the stored record survives a crashed run and always matches what's in
-  // memory. The hash is computed AFTER redaction, so a stored line re-hashes to
-  // its own `hash` (verify reads exactly what was written).
+  // Redact, chain, sign, push in memory, and (if configured) append one JSONL
+  // line — so the stored record survives a crashed run and always matches
+  // what's in memory. The hash is computed AFTER redaction, so a stored line
+  // re-hashes to its own `hash` (verify reads exactly what was written).
+  const signingKey = opts.signingKey ?? process.env.TRUEREPLAY_SIGNING_KEY;
+  const sign = signingKey ? makeSigner(signingKey) : null;
   let prevHash = "";
   const record = (step: Step): void => {
     const clean = redactStep(step);
     clean.prevHash = prevHash;
     clean.hash = hashStep(clean);
+    if (sign) clean.sig = sign(clean.hash);
     prevHash = clean.hash;
     replay.steps.push(clean);
     if (opts.jsonl) appendFileSync(opts.jsonl, JSON.stringify(clean) + "\n");

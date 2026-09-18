@@ -6,7 +6,11 @@
 // What the hash covers: the whole step INCLUDING prevHash and the sealed
 // agent_claim, EXCLUDING only the step's own `hash`/`sig`. So the claim is
 // tamper-evident even though no verdict/assertion path ever reads it.
-import { createHash } from "node:crypto";
+//
+// M9 signing: with a key set, each step also carries an ed25519 `sig` over its
+// hash. `verifyChain(steps, { publicKey })` then checks integrity AND signature.
+// Without a key, nothing changes — the hash chain alone still detects tamper.
+import { createHash, createPrivateKey, createPublicKey, sign as edSign, verify as edVerify, type KeyObject } from "node:crypto";
 
 /** Deterministic JSON: keys sorted, undefined dropped. Same bytes on re-hash. */
 export function canonical(v: unknown): string {
@@ -31,6 +35,21 @@ export interface ChainLink {
   sig?: string;
 }
 
+/** An ed25519 signer over a step's hash. Caches the key; returns base64. */
+export function makeSigner(privateKeyPem: string): (hashHex: string) => string {
+  const key: KeyObject = createPrivateKey(privateKeyPem);
+  return (hashHex) => edSign(null, Buffer.from(hashHex), key).toString("base64");
+}
+
+/** Verify one hash's ed25519 signature against a public key. */
+export function verifyHashSig(hashHex: string, sigB64: string, publicKeyPem: string): boolean {
+  try {
+    return edVerify(null, Buffer.from(hashHex), createPublicKey(publicKeyPem), Buffer.from(sigB64, "base64"));
+  } catch {
+    return false;
+  }
+}
+
 export interface ChainResult {
   ok: boolean;
   length: number;
@@ -43,12 +62,16 @@ export interface ChainResult {
  * "" (empty). One jsonl file is one run — the chain resets per withReplay
  * instance, so verify a single run's file, not several concatenated.
  */
-export function verifyChain(steps: ChainLink[]): ChainResult {
+export function verifyChain(steps: ChainLink[], opts: { publicKey?: string } = {}): ChainResult {
   let prev = "";
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i];
     if ((s.prevHash ?? "") !== prev) return { ok: false, length: steps.length, brokenAt: i, reason: "prevHash does not link to the previous step (reordered or dropped)" };
     if (s.hash !== hashStep(s)) return { ok: false, length: steps.length, brokenAt: i, reason: "hash mismatch (record was altered)" };
+    if (opts.publicKey) {
+      if (!s.sig) return { ok: false, length: steps.length, brokenAt: i, reason: "missing signature (a public key was given but this step is unsigned)" };
+      if (!verifyHashSig(s.hash!, s.sig, opts.publicKey)) return { ok: false, length: steps.length, brokenAt: i, reason: "bad signature (wrong key or altered)" };
+    }
     prev = s.hash!;
   }
   return { ok: true, length: steps.length };

@@ -10,9 +10,10 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { canonical, hashStep, verifyChain } from "../src/chain.js";
+import { canonical, hashStep, verifyChain, makeSigner } from "../src/chain.js";
 
 // Chain plain records the way record() does, so verifyChain should accept them.
 type Rec = Record<string, unknown> & { prevHash?: string; hash?: string };
@@ -68,6 +69,52 @@ describe("verifyChain: detects tamper, reorder, drop", () => {
     const s = build();
     s.splice(1, 1);
     assert.equal(verifyChain(s).ok, false);
+  });
+});
+
+describe("signing (M9): ed25519 over the hash", () => {
+  const kp = generateKeyPairSync("ed25519");
+  const priv = kp.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const pub = kp.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const signed = (): Rec[] => {
+    const s = chain([{ kind: "write", verdict: "landed", i: 0 }, { kind: "write", verdict: "did-not-land", i: 1 }]);
+    const sign = makeSigner(priv);
+    for (const r of s) r.sig = sign(r.hash as string); // sig is set AFTER hash; hashStep excludes it
+    return s;
+  };
+
+  it("a signed chain verifies with the public key", () => assert.equal(verifyChain(signed(), { publicKey: pub }).ok, true));
+
+  it("without a public key, signatures are ignored and the hash chain still holds", () =>
+    assert.equal(verifyChain(signed()).ok, true));
+
+  it("a missing signature breaks when a key is required", () => {
+    const s = signed();
+    delete s[1].sig;
+    const r = verifyChain(s, { publicKey: pub });
+    assert.equal(r.ok, false);
+    assert.match(r.reason!, /missing signature/);
+  });
+
+  it("a wrong public key fails the signature", () => {
+    const other = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString();
+    const r = verifyChain(signed(), { publicKey: other });
+    assert.equal(r.ok, false);
+    assert.match(r.reason!, /bad signature/);
+  });
+
+  it("CLI verify --pubkey reports 'intact and signed'", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truereplay-sig-"));
+    try {
+      const run = join(dir, "run.jsonl");
+      const key = join(dir, "pub.pem");
+      writeFileSync(run, signed().map((r) => JSON.stringify(r)).join("\n") + "\n");
+      writeFileSync(key, pub);
+      const out = execFileSync("node", ["dist/cli.js", "verify", run, "--pubkey", key], { encoding: "utf8" });
+      assert.match(out, /intact and signed/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
