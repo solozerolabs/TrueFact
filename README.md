@@ -23,10 +23,10 @@ TrueFact wraps your browser agent. After every action it reads the live page its
 ## Quickstart
 
 ```bash
-npm install github:solozerolabs/TrueFact   # or: bun add github:solozerolabs/TrueFact
+npm install truefact   # or: bun add truefact
 ```
 
-Installs from git; a `prepare` step compiles it on install. (Runnable examples: [`examples/`](examples).)
+Ships compiled with build provenance. (Runnable examples: [`examples/`](examples).)
 
 ```ts
 import { launch } from "truefact";

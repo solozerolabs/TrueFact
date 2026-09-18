@@ -1,0 +1,25 @@
+# Publish to npm with build provenance on a GitHub Release.
+# One-time manual setup (owner): `npm publish --access public` the first version
+# to reserve the name, then add this repo + workflow as a Trusted Publisher in the
+# npm package settings. After that no NPM_TOKEN is needed — OIDC authenticates and
+# auto-generates provenance. Requires npm >= 11.5.1.
+name: release
+on:
+  release:
+    types: [published]
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # REQUIRED for OIDC / provenance
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm install -g npm@latest # OIDC needs npm >= 11.5.1; Node 22 ships 10.x
+      - run: npm ci # runs `prepare` → tsc
+      - run: npm publish --provenance --access public
+        # No NODE_AUTH_TOKEN with trusted publishing (OIDC).

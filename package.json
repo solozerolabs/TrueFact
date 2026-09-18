@@ -1,6 +1,6 @@
 {
   "name": "truefact",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Runtime wrapper for browser-agent write actions: reads the live page and returns an independent landed/did-not-land/inconclusive verdict, without trusting the agent.",
   "type": "module",
   "main": "dist/index.js",
@@ -21,12 +21,12 @@
   },
   "files": [
     "dist",
-    "SPEC.md"
+    "SPEC.md",
+    "SKILL.md"
   ],
   "scripts": {
     "build": "tsc",
     "prepare": "tsc",
-    "prepublishOnly": "tsc",
     "test": "node --import tsx --test-concurrency=1 --test \"test/*.test.ts\"",
     "probe": "node scripts/probe-stagehand.mjs",
     "probe:act": "node --env-file=.env scripts/probe-overlay-act.mjs",
