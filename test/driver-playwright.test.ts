@@ -1,10 +1,10 @@
 // M7 Phase 2 — the Playwright driver. Two proofs: the pure AX→line normalizer
 // (the classifier signals survive the CDP tree), and a real headless-Chromium
-// run showing withReplay produces a verdict + valid chain through a non-
+// run showing withTrueFact produces a verdict + valid chain through a non-
 // Stagehand driver, with the claim honestly absent. See docs/M7-PLAN.md.
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { withReplay, verifyChain, axToLines } from "../src/index.js";
+import { withTrueFact, verifyChain, axToLines } from "../src/index.js";
 import { playwrightDriver } from "../src/driver-playwright.js";
 import { serve, withPlaywrightBrowser, type Fixture } from "./helpers.js";
 
@@ -25,7 +25,7 @@ describe("axToLines: CDP AX tree -> classifier line grammar", () => {
   });
 });
 
-describe("playwright driver: withReplay drives a real write through the seam", () => {
+describe("playwright driver: withTrueFact drives a real write through the seam", () => {
   const b = withPlaywrightBrowser();
   let fx: Fixture;
   before(async () => {
@@ -41,7 +41,7 @@ describe("playwright driver: withReplay drives a real write through the seam", (
 
   it("produces a landed verdict + valid chain, and the claim is honestly null", async () => {
     const page = await b.page();
-    const w = withReplay(playwrightDriver(page), { screenshots: false, waitMs: 400 });
+    const w = withTrueFact(playwrightDriver(page), { screenshots: false, waitMs: 400 });
     await w.page.goto(`${fx.base}/f`);
     await w.act({ selector: "#go", method: "click" }); // an action object, not NL
 

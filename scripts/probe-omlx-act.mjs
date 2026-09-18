@@ -8,7 +8,7 @@
 //   3. SERVER TRUTH — the fixture oracle: did POST /submit actually arrive
 // No cloud key. Run oMLX first (it auto-starts): the model is read from /v1/models.
 import { Stagehand, localBrowser } from "@browserbasehq/stagehand";
-import { withReplay } from "../dist/index.js";
+import { withTrueFact } from "../dist/index.js";
 import { startFixtures } from "./bench/fixtures.mjs";
 import { omlxModel, omlxModelId } from "./omlx-model.mjs";
 
@@ -19,7 +19,7 @@ console.log(`model: ${id}\nfixture: ${url}\n`);
 
 const browser = await localBrowser.launch({ headless: true });
 const stagehand = await Stagehand.create({ browser, model: omlxModel(id, { log: (m) => console.error(m) }), logging: { level: "error" } });
-const { act, page, replay } = withReplay(stagehand, { screenshots: false });
+const { act, page, replay } = withTrueFact(stagehand, { screenshots: false });
 
 await page.goto(url);
 console.log("acting: \"click the 'Place order' button\" (no mention of the cookie banner)…");

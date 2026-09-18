@@ -1,5 +1,5 @@
 // Day 5 — grounding is pure: a function of the extracted data and the a11y tree
-// lines. No browser here. The integration path (a real extract through withReplay)
+// lines. No browser here. The integration path (a real extract through withTrueFact)
 // lives in replay.test.ts.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";

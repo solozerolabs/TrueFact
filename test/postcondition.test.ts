@@ -1,7 +1,7 @@
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { classify, normalizeTree, multisetDiff, sessionVerdict } from "../src/postcondition.js";
-import { withReplay } from "../src/index.js";
+import { withTrueFact } from "../src/index.js";
 import { serve, state, form, session, fakeStagehand, withBrowser, type Fixture } from "./helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -76,13 +76,13 @@ describe("tree normalization + diff", () => {
 // ---------------------------------------------------------------------------
 // Integration: real browser, real clicks, fake LLM, HTTP fixtures.
 // ---------------------------------------------------------------------------
-describe("withReplay: postcondition end to end", () => {
+describe("withTrueFact: postcondition end to end", () => {
   const b = withBrowser();
   let fx: Fixture;
   const WAIT = 600;
   const runAct = async (spec: Parameters<typeof fakeStagehand>[2], waitMs = WAIT) => {
     const sh = await b.start();
-    const { act, replay } = withReplay(fakeStagehand(sh, await b.page(), spec), { waitMs, screenshots: false });
+    const { act, replay } = withTrueFact(fakeStagehand(sh, await b.page(), spec), { waitMs, screenshots: false });
     await act("do it");
     return replay.steps.at(-1)!;
   };

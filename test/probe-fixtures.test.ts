@@ -6,7 +6,7 @@
 import { createServer, type Server } from "node:http";
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { withReplay, type Declaration } from "../src/index.js";
+import { withTrueFact, type Declaration } from "../src/index.js";
 import { fakeStagehand, withBrowser } from "./helpers.js";
 
 // One server: two checkout pages (optimistic lies, clean is honest), a /verify
@@ -59,7 +59,7 @@ describe("declared probe: out-of-band reconciliation catches optimistic UI", () 
   // Click #place, then compose the auto verdict with the given probe expectation.
   const run = async (page: "optimistic" | "clean", expect: Declaration | Declaration[]) => {
     const sh = fakeStagehand(await b.start(), await b.page(), { actions: [{ selector: "#place" }] });
-    const { act, replay } = withReplay(sh, { screenshots: false, waitMs: 900 });
+    const { act, replay } = withTrueFact(sh, { screenshots: false, waitMs: 900 });
     await (await b.page()).goto(`${srv.base}/${page}`);
     await act("place the order", { expect });
     return replay.steps.at(-1)!;

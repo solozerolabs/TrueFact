@@ -50,11 +50,11 @@ export interface DeclaredResult {
 // src/index.ts — public act signature
 export type ActOptions = StagehandClientActOptions & {
   expect?: Declaration | Declaration[];   // AND
-  waitMs?: number;                        // per-call override of ReplayOptions.waitMs
+  waitMs?: number;                        // per-call override of TrueFactOptions.waitMs
 };
 ```
 
-**Vacuity is rejected at declaration time, loudly.** Empty strings, a `RegExp` that matches `""`, an `element` with an empty selector — `withReplay` throws synchronously with the offending declaration. The engineer wrote it; failing fast beats a silent `landed` on every write.
+**Vacuity is rejected at declaration time, loudly.** Empty strings, a `RegExp` that matches `""`, an `element` with an empty selector — `withTrueFact` throws synchronously with the offending declaration. The engineer wrote it; failing fast beats a silent `landed` on every write.
 
 **`text` matches over the normalized a11y tree** (the same lines `classify` diffs), not `innerText`: it survives re-renders, ignores `display:none`, masks passwords, and `role` lets "a `status` line matching /Order #\d+/" be one declaration. **`element` uses Stagehand's selector parser** (`css`, `xpath=`, `text=`), read with `locator(sel).count()` — the one primitive that does not throw on zero matches; `isVisible()` and friends reject on a missing element, so `count()` gates them. **`url`** with a string is base-path substring plus any query keys present (WebArena's `GOLD in PRED`); with a `RegExp`, the regex. **`field`** reuses the R8 resolver (`value`, `select` selected option, `isPassword`).
 
@@ -126,7 +126,7 @@ Semantics:
 - given a declaration on a scroll act, then the step is still `kind: read` and the declaration is recorded, not evaluated
 - given a declaration with a selector that cannot be resolved, then `inconclusive` / `declared-unreadable`, never `landed`
 - given a `field` declaration against a password input, then `expected`/`actual` are `<redacted:N>` and the verdict is still correct
-- given an empty-string `text` declaration, then `withReplay` throws before any browser call
+- given an empty-string `text` declaration, then `withTrueFact` throws before any browser call
 - given no declaration, then `declaration === "auto"` and the Day 3 verdict is unchanged (regression guard)
 
 Roll-up:

@@ -1,7 +1,7 @@
 // M1 — the tamper-evident hash chain. Each recorded step commits to the prior
 // one; altering, reordering, or dropping a step breaks verification at that
 // point. Pure tests for the primitives, plus a real-writer round-trip: a tiny
-// withReplay run emits a jsonl whose chain verifies, and a one-byte edit breaks
+// withTrueFact run emits a jsonl whose chain verifies, and a one-byte edit breaks
 // it. See docs/SPEC-V2.md §8.
 // (The real writer's chain is proven live in test/sidecar-network.test.ts,
 // which asserts verifyChain(replay.steps).ok on an actual run — no browser is

@@ -3,11 +3,11 @@
 // free one, starts Chrome on it, creates Stagehand, wraps it with the network
 // sidecar ON, and folds browser teardown into close(). Zero config.
 //
-// Bring-your-own-browser? Use `withReplay(driver)` directly (network is then
+// Bring-your-own-browser? Use `withTrueFact(driver)` directly (network is then
 // opt-in via { network: { port } }, since you own the launch). See README.
 import { createServer } from "node:net";
 import { localBrowser, Stagehand } from "@browserbasehq/stagehand";
-import { withReplay, type Wrapped, type ReplayOptions } from "./index.js";
+import { withTrueFact, type Wrapped, type TrueFactOptions } from "./index.js";
 
 /** An ephemeral free TCP port (bind :0, read it, release). */
 function freePort(): Promise<number> {
@@ -21,7 +21,7 @@ function freePort(): Promise<number> {
   });
 }
 
-export interface LaunchOptions extends Omit<ReplayOptions, "network"> {
+export interface LaunchOptions extends Omit<TrueFactOptions, "network"> {
   model?: { modelName: string; apiKey?: string }; // your Stagehand model; TrueFact is model-agnostic
   headless?: boolean; // default true
   port?: number; // override the auto-picked Chrome debug port (rarely needed)
@@ -51,7 +51,7 @@ export async function launch(opts: LaunchOptions = {}): Promise<Launched> {
   // string so callers aren't pinned to our copy of that list.
   const createOpts = { browser, logging: { level: "error" }, ...(model ? { model } : {}) } as Parameters<typeof Stagehand.create>[0];
   const stagehand = await Stagehand.create(createOpts);
-  const wrapped = withReplay(stagehand, { ...replayOpts, network: { port } });
+  const wrapped = withTrueFact(stagehand, { ...replayOpts, network: { port } });
   const closeReplay = wrapped.close;
   return Object.assign(wrapped, {
     stagehand,

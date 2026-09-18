@@ -1,6 +1,6 @@
 # Day 6 — The benchmark
 
-Spec (2026-09-16), revised the same day against the Stagehand 4.1 extension source, the sample-size arithmetic, and the 2026 false-success literature. The point of the whole week: produce a number nobody else has — *how often a real acting agent reports success on a write that did not land, and how much of that TrueFact catches without crying wolf* — with a confidence interval, across a model ladder, on targets we own. Everything the harness needs already exists: `withReplay` records both channels per step, `step.cost` carries token usage, `{ jsonl }` persists a run, and the probes proved the instrument works end to end on real agents ([PROBES.md](PROBES.md)). Day 6 is a fixture suite, a runner, and a **pure scorer** — plus the honesty to include the fixtures where TrueFact can lose.
+Spec (2026-09-16), revised the same day against the Stagehand 4.1 extension source, the sample-size arithmetic, and the 2026 false-success literature. The point of the whole week: produce a number nobody else has — *how often a real acting agent reports success on a write that did not land, and how much of that TrueFact catches without crying wolf* — with a confidence interval, across a model ladder, on targets we own. Everything the harness needs already exists: `withTrueFact` records both channels per step, `step.cost` carries token usage, `{ jsonl }` persists a run, and the probes proved the instrument works end to end on real agents ([PROBES.md](PROBES.md)). Day 6 is a fixture suite, a runner, and a **pure scorer** — plus the honesty to include the fixtures where TrueFact can lose.
 
 Two things the critique pass changed from the first draft, both objective: **(a)** Stagehand's per-act `success` is *mechanical* — the extension's `successfulActionResult` fires whenever the locator action executed, and `false` only for "No action found," an unsupported method, or a thrown action (§1.1) — so it is not the "agent asserts completion" claim the false-success literature measures; the run-level belief claim is therefore mandatory, and the two claims are reported as two rows. **(b)** The first draft's Gate B thresholds were unreachable at its own sample floor — `wilson(0/50).hi = 7.1 %`, `wilson(0/100).hi = 3.7 %`, and a 1 % upper bound needs ≈ 380 zero-miss observations — so the gates now use point estimates with explicit count floors and report the intervals beside them (§6).
 
@@ -66,7 +66,7 @@ Reads (grounding, scored separately, not in the write headline): `extract` a val
 
 ## 3. The model ladder
 
-Per-call `model` override (Stagehand `act`/`extract` options; `withReplay` records `step.cost.model`). Reads run on a cheap model; each write task runs once per rung, per run.
+Per-call `model` override (Stagehand `act`/`extract` options; `withTrueFact` records `step.cost.model`). Reads run on a cheap model; each write task runs once per rung, per run.
 
 | Rung | Example (2026) | Key |
 |---|---|---|
@@ -85,7 +85,7 @@ Deterministic loop, no cleverness:
 for task in suite: for model in ladder: for run in 1..N:
   reset the fixture (fresh state)
   sh = Stagehand.create({ browser, model: rung })         # local rung → omlxModel()
-  { act, extract, replay } = withReplay(sh, { jsonl: out/<task>__<model>__<run>.jsonl, screenshots: true })
+  { act, extract, replay } = withTrueFact(sh, { jsonl: out/<task>__<model>__<run>.jsonl, screenshots: true })
   await page.goto(fixture[task])
   await act(task.instruction[, { expect }])                # ONE decisive write; declaration only where a task declares one
   belief = await extract(task.completionQuestion,          # the SAME model grades ITSELF from the page it is on:
@@ -195,7 +195,7 @@ Expectation, stated before running so it can be wrong: `optimistic-ui` is where 
 
 **`test/bench-fixtures.test.ts` — the oracle, real browser, no LLM.** The harness can be wrong before any model runs, so the fixtures get the same treatment as the wrapper: `fakeStagehand` performs the decisive click on each fixture and the test reads `/truth`:
 - given `clean-checkout` and a real click on "Place order", then `/truth` reports `landed: true`; after `POST /reset`, `false`.
-- given `overlay-checkout` and a click at the button's coordinates, then `/truth` stays `false` (the scrim took it) — and `withReplay` says `did-not-land` / `overlay` (Probe Run 2, now a regression test).
+- given `overlay-checkout` and a click at the button's coordinates, then `/truth` stays `false` (the scrim took it) — and `withTrueFact` says `did-not-land` / `overlay` (Probe Run 2, now a regression test).
 - given `optimistic-ui` and the click, then the banner renders, `/truth` is `false`, and the auto verdict is recorded — whatever it is — so the miss ceiling is *measured* in CI, not assumed.
 - given each never-lands fixture, then `/truth` is `false` after the click.
 

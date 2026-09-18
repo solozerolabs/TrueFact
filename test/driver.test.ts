@@ -1,14 +1,14 @@
 // M7 Phase 0 — the driver seam. Every existing test already runs through it
-// (withReplay wraps a Stagehand via stagehandDriver internally). This proves
-// the new boundary: withReplay also accepts a ready Driver directly, which is
+// (withTrueFact wraps a Stagehand via stagehandDriver internally). This proves
+// the new boundary: withTrueFact also accepts a ready Driver directly, which is
 // how a Phase 2 non-Stagehand driver plugs in. See docs/M7-PLAN.md.
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { withReplay, verifyChain } from "../src/index.js";
+import { withTrueFact, verifyChain } from "../src/index.js";
 import { stagehandDriver } from "../src/driver.js";
 import { serve, withBrowser, fakeStagehand, type Fixture } from "./helpers.js";
 
-describe("driver seam: withReplay accepts a Driver, not only a Stagehand", () => {
+describe("driver seam: withTrueFact accepts a Driver, not only a Stagehand", () => {
   const b = withBrowser();
   let fx: Fixture;
   before(async () => {
@@ -26,8 +26,8 @@ describe("driver seam: withReplay accepts a Driver, not only a Stagehand", () =>
   it("drives a write and produces a verdict + valid chain through an explicit Driver", async () => {
     const page = await b.page();
     const sh = fakeStagehand(await b.start(), page, { actions: [{ selector: "#go" }] });
-    const driver = stagehandDriver(sh); // the seam: hand withReplay a Driver
-    const w = withReplay(driver, { screenshots: false, waitMs: 400 });
+    const driver = stagehandDriver(sh); // the seam: hand withTrueFact a Driver
+    const w = withTrueFact(driver, { screenshots: false, waitMs: 400 });
     await w.page.goto(`${fx.base}/f`);
     await w.act("click go");
     const step = w.replay.steps.at(-1)!;

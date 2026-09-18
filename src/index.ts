@@ -104,7 +104,7 @@ export interface Replay {
   finalize(opts?: { expect?: Declaration | Declaration[] }): Promise<RunDeclaration>;
 }
 
-export interface ReplayOptions {
+export interface TrueFactOptions {
   screenshots?: boolean; // default true; captured on write steps, after the verdict is decided
   screenshotDir?: string; // default ".truefact/screenshots"
   waitMs?: number; // one budget for the auto no-change poll and declared checks (default 5000)
@@ -276,7 +276,7 @@ function redactStep(step: Step, redactFields?: (string | RegExp)[]): Step {
   return step;
 }
 
-export function withReplay(source: Stagehand | Driver, opts: ReplayOptions = {}): Wrapped {
+export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions = {}): Wrapped {
   // Accept a Stagehand (wrap it) or a ready Driver (Phase 2 drivers pass one).
   const driver: Driver =
     "activePage" in source && "readerFor" in source ? (source as Driver) : stagehandDriver(source as Stagehand);

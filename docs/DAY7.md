@@ -48,7 +48,7 @@ New file: `LICENSE` — MIT, the author's name, the year. `package.json` already
 }
 ```
 
-- **`exports` with a `./bench` subpath** so `import { score } from "truefact/bench"` works without loading the wrapper — the scorer is usable on its own. The root stays `withReplay` + the types.
+- **`exports` with a `./bench` subpath** so `import { score } from "truefact/bench"` works without loading the wrapper — the scorer is usable on its own. The root stays `withTrueFact` + the types.
 - **`prepublishOnly` runs build + the full suite** — nothing publishes on red. It does *not* run `npm run bench` (that needs a key/browser and is the human's pre-publish step, §1).
 - `keywords`, `main`, `types`, `peerDependencies` (Stagehand) are already set. No `dependencies` — the wrapper has none, which is a selling point the README states.
 
@@ -66,7 +66,7 @@ Order, top to bottom:
    Below it: the one-sentence headline (`agent false-success R%, TrueFact residual M%`), the gate line (`market exists ✓ · instrument works ✓`), and **Reproduce:** `npm run bench` (local rung needs no key) → `npm run bench:score`, linking `docs/FINDINGS.md` and `report.json`.
 3. **Install** — `npm install truefact`, one line, "zero runtime dependencies."
 4. **The rule** (two channels) — kept, it is the thesis.
-5. **Use** — `withReplay`, declarations, grounding, condensed from the current README (already accurate to the shipped API).
+5. **Use** — `withTrueFact`, declarations, grounding, condensed from the current README (already accurate to the shipped API).
 6. **Score your own fleet** — `import { score } from "truefact/bench"`; feed it your `RunRecord[]` (agent claim, TrueFact verdict, your own oracle) and get the same table. This is the SPEC's "per-fleet" output as a public function.
 7. **What's not established** — the honesty section (§0.6).
 8. **License** — MIT.
@@ -93,7 +93,7 @@ Either way the repo stays public with the honest write-up — that is the reprod
 ## 7. Verification (the day's checks)
 
 - `npm publish --dry-run` — the tarball is exactly `dist/**` + `README.md` + `LICENSE` + `SPEC.md`; **no `scripts/`, `test/`, `docs/`, `.env`, `bench/`, or `.truefact/`**. Grep the packed tarball for `sk-`, `sk-ant-`, `sk-omlx`, `secret_key`, `@` (email) → clean (the redaction net is for runtime records; the package must carry no secret at all).
-- **Install smoke:** `npm pack`, install the tarball into a temp dir, and `import { withReplay } from "truefact"` + `import { score } from "truefact/bench"` both resolve and run a trivial call (`score([])` returns a report; `withReplay` is a function). Proves the `exports` map and the entry points.
+- **Install smoke:** `npm pack`, install the tarball into a temp dir, and `import { withTrueFact } from "truefact"` + `import { score } from "truefact/bench"` both resolve and run a trivial call (`score([])` returns a report; `withTrueFact` is a function). Proves the `exports` map and the entry points.
 - **README ↔ report parity:** the numbers in the README's `BENCH` block byte-match `readme-table.mjs`'s output from the published `report.json` (§5).
 - `prepublishOnly` green (build + 138+ tests).
 - The `docs/FINDINGS.md` result table is updated with the Day-6 numbers (it currently holds the two probe anecdotes; Day 6 gives it the rate).

@@ -6,7 +6,7 @@
 // See docs/DAY6.md §4.  Usage:  node --env-file=.env scripts/bench/run.mjs
 import { mkdirSync, appendFileSync, writeFileSync } from "node:fs";
 import { Stagehand, localBrowser } from "@browserbasehq/stagehand";
-import { withReplay } from "../../dist/index.js";
+import { withTrueFact } from "../../dist/index.js";
 import { startFixtures, TASKS } from "./fixtures.mjs";
 import { omlxModel, omlxModelId } from "../omlx-model.mjs";
 
@@ -57,7 +57,7 @@ for (const task of TASKS) {
       const browser = await localBrowser.launch({ headless: true });
       const stagehand = await Stagehand.create({ browser, model: rung.make(), logging: { level: "error" } });
       const jsonl = `${OUT}/${task.id}__${rung.model.replace(/\//g, "-")}__${run}.jsonl`;
-      const { act, extract, page, replay } = withReplay(stagehand, { jsonl, screenshots: true });
+      const { act, extract, page, replay } = withTrueFact(stagehand, { jsonl, screenshots: true });
       let claimBelief = null;
       try {
         await page.goto(fx.url(task.id));

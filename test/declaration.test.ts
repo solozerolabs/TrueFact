@@ -1,7 +1,7 @@
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { applyDeclarations, validateDeclarations, type DeclaredResult, type Declaration } from "../src/declaration.js";
-import { withReplay } from "../src/index.js";
+import { withTrueFact } from "../src/index.js";
 import type { Outcome } from "../src/postcondition.js";
 import { serve, fakeStagehand, withBrowser, type Fixture } from "./helpers.js";
 
@@ -64,13 +64,13 @@ describe("applyDeclarations (pure composition, DAY4 §3)", () => {
   });
 });
 
-describe("withReplay: declared postconditions end to end", () => {
+describe("withTrueFact: declared postconditions end to end", () => {
   const b = withBrowser();
   let fx: Fixture;
   const WAIT = 600;
   const runAct = async (spec: Parameters<typeof fakeStagehand>[2], expect?: Declaration | Declaration[], waitMs = WAIT) => {
     const sh = await b.start();
-    const { act, replay } = withReplay(fakeStagehand(sh, await b.page(), spec), { waitMs, screenshots: false });
+    const { act, replay } = withTrueFact(fakeStagehand(sh, await b.page(), spec), { waitMs, screenshots: false });
     await act("do it", expect ? { expect } : undefined);
     return { step: replay.steps.at(-1)!, replay };
   };
@@ -221,7 +221,7 @@ describe("withReplay: declared postconditions end to end", () => {
     assert.equal(step.evidence.postcondition?.declared, undefined);
   });
 
-  it("given a vacuous declaration, then withReplay throws before any browser action", async () => {
+  it("given a vacuous declaration, then withTrueFact throws before any browser action", async () => {
     await go("/receipt");
     await assert.rejects(runAct({ selector: "#s" }, { kind: "text", matches: "" }), /vacuous/);
   });

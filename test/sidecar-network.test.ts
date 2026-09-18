@@ -7,7 +7,7 @@ import { createServer, type Server } from "node:http";
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Stagehand, localBrowser } from "@browserbasehq/stagehand";
-import { withReplay } from "../src/index.js";
+import { withTrueFact } from "../src/index.js";
 import { applyNetwork } from "../src/postcondition.js";
 import { verifyChain } from "../src/chain.js";
 import { fakeStagehand } from "./helpers.js";
@@ -67,7 +67,7 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
   const run = async (route: "optimistic" | "clean" | "thirdparty") => {
     const page = (await sh.browser.context.activePage())!;
     const fake = fakeStagehand(sh, page, { actions: [{ selector: "#place" }] });
-    const w = withReplay(fake, { network: { port: PORT }, screenshots: false, waitMs: 600 });
+    const w = withTrueFact(fake, { network: { port: PORT }, screenshots: false, waitMs: 600 });
     await w.page.goto(`${base}/${route}`);
     await w.act("place the order");
     await w.close();
@@ -91,7 +91,7 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
   it("the real writer emits a tamper-evident chain (M1): verifyChain over an actual run passes", async () => {
     const page = (await sh.browser.context.activePage())!;
     const fake = fakeStagehand(sh, page, { actions: [{ selector: "#place" }] });
-    const w = withReplay(fake, { screenshots: false, waitMs: 400 });
+    const w = withTrueFact(fake, { screenshots: false, waitMs: 400 });
     await w.page.goto(`${base}/clean`);
     await w.act("place the order");
     await w.act("place the order");

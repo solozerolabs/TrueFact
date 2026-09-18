@@ -11,7 +11,7 @@
 import { createServer } from "node:http";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { Stagehand, localBrowser } from "@browserbasehq/stagehand";
-import { withReplay } from "../../dist/index.js";
+import { withTrueFact } from "../../dist/index.js";
 import { startFixtures } from "./fixtures.mjs";
 
 const N = Number(process.env.SHOWCASE_N || 10);
@@ -56,7 +56,7 @@ async function runOne(task, run) {
     logging: { level: "error" },
   });
   const jsonl = `${OUT}/${task.id}__${run}.jsonl`;
-  const { act, extract, page, replay } = withReplay(stagehand, { jsonl, screenshots: true, network: { port } });
+  const { act, extract, page, replay } = withTrueFact(stagehand, { jsonl, screenshots: true, network: { port } });
   let belief = null;
   try {
     await page.goto(fx.url(task.id));

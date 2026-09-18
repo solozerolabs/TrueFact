@@ -83,15 +83,15 @@ Every step commits to the one before it, including what the agent claimed. Alter
 Already launch Chrome yourself? Wrap the Stagehand instance directly. Network verification is then opt-in, since you own the launch:
 
 ```ts
-import { withReplay } from "truefact";
-const tr = withReplay(stagehand, { network: { port } }); // port = your Chrome's --remote-debugging-port
+import { withTrueFact } from "truefact";
+const tr = withTrueFact(stagehand, { network: { port } }); // port = your Chrome's --remote-debugging-port
 ```
 
 Driving with **Playwright** instead of Stagehand? Pass a `playwrightDriver` — same verdict engine, no code change to how it reads the page:
 
 ```ts
-import { withReplay, playwrightDriver } from "truefact";
-const tr = withReplay(playwrightDriver(page)); // page = a Playwright Page
+import { withTrueFact, playwrightDriver } from "truefact";
+const tr = withTrueFact(playwrightDriver(page)); // page = a Playwright Page
 await tr.page.goto(url);
 await tr.act({ selector: "#submit", method: "click" }); // verified: did it actually land?
 ```
@@ -103,7 +103,7 @@ A Playwright action carries no self-report, so there's no claim to disbelieve �
 The record holds verdicts, the a11y-tree diff, form field values, URLs and the agent's claim — never cookies, request headers or response bodies (they aren't captured at all). Password values are masked at capture; API keys, tokens and emails are scrubbed from every stored string before a step is written or hashed. For PII that isn't secret-shaped — a name, an SSN — name the fields and their values are length-masked:
 
 ```ts
-const tr = withReplay(stagehand, { redactFields: ["ssn", /card/] }); // values gone, keys kept
+const tr = withTrueFact(stagehand, { redactFields: ["ssn", /card/] }); // values gone, keys kept
 ```
 
 ## Does it cry wolf?

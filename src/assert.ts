@@ -4,7 +4,7 @@
 // (docs/DAY2) holds for callbacks exactly as it does for declared `expect`.
 //
 // The value: change an assertion, re-run it against a stored run (a `jsonl`
-// from withReplay) with no browser and no model — see which historical steps
+// from withTrueFact) with no browser and no model — see which historical steps
 // now pass or fail. A flaky agent run becomes a deterministic, $0 unit test.
 // See docs/SPEC-V2.md §4 / §5.1.
 import { readFileSync } from "node:fs";

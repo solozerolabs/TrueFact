@@ -3,7 +3,7 @@
 // the wrapper: fakeStagehand performs the decisive action and we read /truth.
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { withReplay } from "../src/index.js";
+import { withTrueFact } from "../src/index.js";
 import { fakeStagehand, withBrowser } from "./helpers.js";
 // @ts-expect-error — .mjs fixture, no types
 import { startFixtures } from "../scripts/bench/fixtures.mjs";
@@ -24,7 +24,7 @@ describe("bench fixtures: the oracle is honest", () => {
   const runTask = async (task: string, actions: { selector: string; method?: string; args?: string[] }[]) => {
     await fx.reset();
     const sh = fakeStagehand(await b.start(), await b.page(), { actions });
-    const { act, replay } = withReplay(sh, { screenshots: false, waitMs: 900 });
+    const { act, replay } = withTrueFact(sh, { screenshots: false, waitMs: 900 });
     await (await b.page()).goto(fx.url(task));
     await act(`do: ${task}`);
     return { step: replay.steps.at(-1)!, truth: await fx.truth(task) };

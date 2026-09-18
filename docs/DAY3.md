@@ -167,7 +167,7 @@ Hermetic, `node:test`, one local Chrome + `Stagehand.create({ browser })` with *
 
 **Unit (pure, no browser):** `classifyChange(before, after, flags)` over hand-built `PageState`s — one `it` per row of §4, plus ordering cases (alert-error beats confirmation; prompt beats confirmation; navigation beats everything; destination gate demotes `navigated`).
 
-**Integration without an LLM:** `withReplay()` takes the fake from `fakeStagehand()`; that exercises the real `run()` path — before capture, action, settle, session, postcondition, extended wait, destination gate — end to end. The fake is only the LLM; the browser, the click, and every page read are real.
+**Integration without an LLM:** `withTrueFact()` takes the fake from `fakeStagehand()`; that exercises the real `run()` path — before capture, action, settle, session, postcondition, extended wait, destination gate — end to end. The fake is only the LLM; the browser, the click, and every page read are real.
 
 | Fixture / action | Expected |
 |---|---|

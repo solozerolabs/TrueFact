@@ -28,7 +28,7 @@ TrueFact does not build a video pipeline. Stagehand runs on Playwright/CDP, wher
 - **Playwright trace** — `tracing.start({ screenshots: true, snapshots: true })` yields a `trace.zip`: a scrubbable DOM+screenshot+network timeline, openable in the existing trace viewer.
 - **Browserbase** — every session already has a hosted, seekable replay URL.
 
-`withReplay` gains an option to record the capture handle per run (a local path, or the Browserbase session id). It stores the handle; it does not process frames. Reinventing the trace viewer is the thing to not do.
+`withTrueFact` gains an option to record the capture handle per run (a local path, or the Browserbase session id). It stores the handle; it does not process frames. Reinventing the trace viewer is the thing to not do.
 
 ### Index: the part TrueFact owns
 

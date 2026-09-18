@@ -1,7 +1,7 @@
 // Pure roll-up logic (no browser) + the wrapper's nav path on a real Stagehand with no model.
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { rollup, combine, withReplay } from "../src/index.js";
+import { rollup, combine, withTrueFact } from "../src/index.js";
 import { step, fakeStagehand, withBrowser, serve, type Fixture } from "./helpers.js";
 
 describe("rollup (write steps only)", () => {
@@ -28,7 +28,7 @@ describe("combine (run-level declaration only demotes)", () => {
   });
 });
 
-describe("withReplay: nav path (no model)", () => {
+describe("withTrueFact: nav path (no model)", () => {
   const b = withBrowser();
   let fx: Fixture;
   before(async () => {
@@ -41,7 +41,7 @@ describe("withReplay: nav path (no model)", () => {
   });
 
   it("records a nav step with before/after fingerprints and a session read", async () => {
-    const { page, replay } = withReplay(await b.start(), { screenshots: false });
+    const { page, replay } = withTrueFact(await b.start(), { screenshots: false });
     await page.goto(fx.base + "/nav");
     const s = replay.steps[0];
     assert.equal(s.kind, "nav");
@@ -53,13 +53,13 @@ describe("withReplay: nav path (no model)", () => {
   });
 
   it("run-level claim is a separate channel set by the caller", async () => {
-    const { replay } = withReplay(await b.start(), { screenshots: false });
+    const { replay } = withTrueFact(await b.start(), { screenshots: false });
     replay.setClaim(true, "scripted flow finished");
     assert.deepEqual(replay.claim, { done: true, note: "scripted flow finished" });
   });
 });
 
-describe("withReplay: grounding on extract (Day 5)", () => {
+describe("withTrueFact: grounding on extract (Day 5)", () => {
   const b = withBrowser();
   let fx: Fixture;
   before(async () => {
@@ -77,7 +77,7 @@ describe("withReplay: grounding on extract (Day 5)", () => {
   // fakeStagehand.extract returns `data` verbatim; the browser/page read is real.
   const extractOn = async (path: string, data: unknown, opts?: unknown) => {
     const sh = fakeStagehand(await b.start(), await b.page(), { actions: [], extract: data });
-    const { extract, replay } = withReplay(sh, { screenshots: false });
+    const { extract, replay } = withTrueFact(sh, { screenshots: false });
     await (await b.page()).goto(fx.base + path);
     await (extract as (i: string, o?: unknown) => Promise<unknown>)("get it", opts);
     return replay.steps.at(-1)!;
@@ -111,7 +111,7 @@ describe("withReplay: grounding on extract (Day 5)", () => {
 
   it("given an observe step, then it does not ground (non-grounding), stays a read at inconclusive", async () => {
     const sh = fakeStagehand(await b.start(), await b.page(), { actions: [] });
-    const { observe, replay } = withReplay(sh, { screenshots: false });
+    const { observe, replay } = withTrueFact(sh, { screenshots: false });
     await (await b.page()).goto(fx.base + "/plain");
     await observe("find things");
     const s = replay.steps.at(-1)!;

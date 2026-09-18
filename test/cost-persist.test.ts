@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { withReplay, type Step } from "../src/index.js";
+import { withTrueFact, type Step } from "../src/index.js";
 import { redactText } from "../src/redact.js";
 import { fakeStagehand, withBrowser, serve, type Fixture } from "./helpers.js";
 
@@ -16,7 +16,7 @@ describe("redactText", () => {
   });
 });
 
-describe("withReplay: cost + jsonl", () => {
+describe("withTrueFact: cost + jsonl", () => {
   const b = withBrowser();
   let fx: Fixture;
   const jsonl = join(tmpdir(), `truefact-${process.pid}.jsonl`);
@@ -36,7 +36,7 @@ describe("withReplay: cost + jsonl", () => {
       message: "sent to leak@corp.com", // must not survive into the record
       usage: { inputTokens: 10, outputTokens: 4, inferenceTimeMs: 120 },
     });
-    const { act, page, replay } = withReplay(sh, { screenshots: false, jsonl });
+    const { act, page, replay } = withTrueFact(sh, { screenshots: false, jsonl });
     await page.goto(fx.base + "/f");
     await act("click go");
 
@@ -65,7 +65,7 @@ describe("withReplay: cost + jsonl", () => {
         { selector: "#s", method: "fill", args: ["123-45-6789"] },
       ],
     });
-    const { act, page, replay } = withReplay(sh, { screenshots: false, redactFields: ["ssn"] });
+    const { act, page, replay } = withTrueFact(sh, { screenshots: false, redactFields: ["ssn"] });
     await page.goto(fx2.base + "/form");
     await act("fill the form");
 

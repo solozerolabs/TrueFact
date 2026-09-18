@@ -61,7 +61,7 @@ real landing) > independence (out-of-band, no claim, no body leak) > ergonomics
    (no body).
 4. `test/probe-fixtures.test.ts`: a local server with an optimistic page (shows
    ✅, records the order FAILED) and a `/verify` endpoint reflecting true server
-   state. Drive one click through `withReplay` + `fakeStagehand` with a `probe`
+   state. Drive one click through `withTrueFact` + `fakeStagehand` with a `probe`
    expect; assert `did-not-land`. Also: clean mirror (server placed → `landed`);
    unreachable probe (→ `inconclusive`); relative-URL resolution; a 5xx verify
    endpoint (→ `inconclusive`, not a false halt).

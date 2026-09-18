@@ -5,7 +5,7 @@
 > browser with its own tools, with TrueFact's verdict engine run out-of-band.
 > The output is a research result — "we pointed a frontier browser agent at N
 > traps and TrueFact independently caught M silent failures" — not a
-> certification of `withReplay`.
+> certification of `withTrueFact`.
 
 ## Why build it
 
@@ -61,7 +61,7 @@ Same three channels as the shipped benchmark, kept strictly separate:
   reading the page out-of-band. The driver never sees it.
 - **oracle** — `truth(task)` from the fixture server, the incorruptible POST log.
 
-Does **not** measure: the `withReplay`/Stagehand `act`/`extract` wrapper. That is
+Does **not** measure: the `withTrueFact`/Stagehand `act`/`extract` wrapper. That is
 the product; this is a research probe of the verdict engine against a different
 driver.
 

@@ -59,7 +59,7 @@ export interface ChainResult {
 
 /**
  * Recompute the chain and report the first break. A run's first step links to
- * "" (empty). One jsonl file is one run — the chain resets per withReplay
+ * "" (empty). One jsonl file is one run — the chain resets per withTrueFact
  * instance, so verify a single run's file, not several concatenated.
  */
 export function verifyChain(steps: ChainLink[], opts: { publicKey?: string } = {}): ChainResult {
