@@ -44,10 +44,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/solozerolabs/TrueReplay.git"
+    "url": "git+https://github.com/solozerolabs/TrueFact.git"
   },
-  "homepage": "https://github.com/solozerolabs/TrueReplay#readme",
+  "homepage": "https://github.com/solozerolabs/TrueFact#readme",
   "bugs": {
-    "url": "https://github.com/solozerolabs/TrueReplay/issues"
+    "url": "https://github.com/solozerolabs/TrueFact/issues"
   }
 }

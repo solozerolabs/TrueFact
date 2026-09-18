@@ -163,11 +163,11 @@ only after we are in-path; it cannot be the thing that gets us in-path.
    needs in-process wrapping.
 4. **Enterprise tier now?** No. `fleet --html` is the cheap version. Hosted tier
    waits for a converted paying user. (§6)
-5. **The name.** BLOCKING on the user. The repo/git remote say **TrueReplay**,
-   the package/bin/brand say **TrueFact**. Pick one everywhere (package name, git
-   URL, README install line, screenshot dir, docs). Recommendation: **TrueFact** —
-   it is already the package name, the CLI, and the brand in the code; only the
-   git URL and README lag.
+5. **The name. RESOLVED → TrueFact everywhere.** The GitHub repo was renamed
+   solozerolabs/TrueReplay → solozerolabs/TrueFact (GitHub keeps a redirect, so
+   old install URLs still resolve); the README install line, package.json URLs,
+   and the git remote were updated. Only the local working-directory folder name
+   still reads `TrueReplay` — cosmetic, left as-is to avoid disrupting tooling.
 
 ## 8. The experiment that matters more than any feature
 
