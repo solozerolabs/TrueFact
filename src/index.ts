@@ -57,6 +57,8 @@ export { renderHtml, viewFile } from "./view.js";
 export { launch, type LaunchOptions, type Launched } from "./launch.js";
 export { stagehandDriver, stagehandReader, type Driver, type PageReader } from "./driver.js";
 export { playwrightDriver, playwrightReader, axToLines } from "./driver-playwright.js";
+export { cdpDriver, cdpReader, type CdpAction, type Perform } from "./driver-cdp.js";
+export { startServe, type ServeOptions, type ServeRequest, type ServeReply, type ServeSession } from "./serve.js";
 export { summarizeRun, rollupRuns, type RunSummary, type FleetSummary } from "./fleet.js";
 export type StepKind = "write" | "read" | "nav";
 

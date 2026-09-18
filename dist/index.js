@@ -18,6 +18,8 @@ export { renderHtml, viewFile } from "./view.js";
 export { launch } from "./launch.js";
 export { stagehandDriver, stagehandReader } from "./driver.js";
 export { playwrightDriver, playwrightReader, axToLines } from "./driver-playwright.js";
+export { cdpDriver, cdpReader } from "./driver-cdp.js";
+export { startServe } from "./serve.js";
 export { summarizeRun, rollupRuns } from "./fleet.js";
 /** Run verdict rolls up over write steps only; a read/nav never decides it. */
 export function rollup(steps) {

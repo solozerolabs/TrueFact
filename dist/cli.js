@@ -129,6 +129,10 @@ async function main(argv) {
         const { runWatchCli } = await import("./watch.js");
         return runWatchCli(argv.slice(1));
     }
+    if (cmd === "serve") {
+        const { runServeCli } = await import("./serve.js");
+        return runServeCli(argv.slice(1));
+    }
     process.stderr.write("usage:\n" +
         "  truefact assert <run.jsonl> --with <assertions.mjs>\n" +
         "  truefact verify <run.jsonl> [--pubkey <key.pem>]\n" +
@@ -136,7 +140,8 @@ async function main(argv) {
         "  truefact fleet  <run.jsonl...>\n" +
         "  truefact gate   <run.jsonl...> [--max-did-not-land 0.05]\n" +
         "  truefact demo\n" +
-        "  truefact watch  --port <n> [--api-origins a.com,b.com] [--body-errors] [--jsonl run.jsonl]\n");
+        "  truefact watch  --port <n> [--api-origins a.com,b.com] [--body-errors] [--jsonl run.jsonl]\n" +
+        "  truefact serve  --port <n> [--jsonl run.jsonl] [--api-origins a,b] [--body-errors] [--screenshots]  (stdio JSON lines; see docs/SERVE.md)\n");
     return 2;
 }
 main(process.argv.slice(2)).then((code) => process.exit(code), (e) => {

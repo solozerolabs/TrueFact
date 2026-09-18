@@ -112,6 +112,14 @@ truefact watch --port 9222 [--api-origins api.yoursite.com] [--body-errors] [--j
 
 Observe mode has no wrapped action to bracket. So it stays conservative, to protect the zero-false-halt record. Two same-origin background patterns are excluded by default. One is a 401 or 403 auth probe. The other is a beacon the browser canceled after the server already accepted it. It does not yet render the DOM-based verdict the wrapper does. See [docs/WATCH-PLAN.md](docs/WATCH-PLAN.md). `--jsonl` writes the same tamper-evident chain that `view`, `verify`, and `fleet` consume.
 
+## Bracket a browser you drive yourself
+
+`watch` is the passive network floor. `serve` is the full verdict for a browser TrueFact didn't launch — a Python Playwright bridge, Puppeteer, anything that can start Chrome with `--remote-debugging-port`. Send `before`, do the action, send `after`, get the Step. Protocol in [docs/SERVE.md](docs/SERVE.md).
+
+```bash
+truefact serve --port 9222 --jsonl run.jsonl
+```
+
 ## What gets stored
 
 The record holds verdicts, the a11y-tree diff, form field values, URLs, and the agent's claim. It never holds cookies, request headers, or response bodies. Those aren't captured at all. Password values are masked at capture. API keys, tokens, and emails are scrubbed from every stored string before a step is written or hashed. For PII that isn't secret-shaped, like a name or an SSN, name the fields and their values are length-masked:
@@ -128,9 +136,22 @@ A verifier that halts a good run is worse than useless. This is the number TrueF
 
 TrueFact never trusts the agent. It reads the page and the network. The agent's claim is recorded on a separate channel and compared only at the end. If those channels touch during measurement, the number is worthless. So they don't.
 
-## Status
+## What it works with
 
-Works today with Stagehand 4.x. Playwright and Browser-Use drivers are next. The verdict engine reads through one uniform page seam, so a new driver plugs in behind it without touching the classifier. Each driver brings its own read source: Stagehand's a11y tree, Playwright's CDP. Network verification attaches to Chrome directly over CDP. The test suite is hermetic, runs real Chrome, and uses no LLM. Roadmap: [docs/SPEC-V2.md](docs/SPEC-V2.md).
+Two reads, two reaches. **Network truth** — the 500 behind a green checkmark — comes from a CDP client attached to the Chrome the agent drives. It is framework-agnostic: anything on a real Chrome with a debug port gets it. **Page truth** — a click that hit an overlay, a form that silently rejected — needs an in-process page handle, so it is per-driver.
+
+| Framework | Network verdict | Page/DOM verdict | Disbelieves the agent's claim |
+|---|---|---|---|
+| **Stagehand 4.x** | ✅ | ✅ a11y tree | ✅ Stagehand reports a self-claim to check |
+| **Playwright** | ✅ | ✅ CDP `getFullAXTree` | — a Playwright `act` is your own call, so there is no claim to contradict |
+| **Browser-Use, Puppeteer, a human** | ✅ via `truefact watch` | — | — |
+
+```ts
+import { withTrueFact, playwrightDriver } from "truefact";
+const tr = withTrueFact(playwrightDriver(page), { network: { port } }); // your Playwright page, verified
+```
+
+The verdict engine reads through one uniform page seam, so a new driver plugs in behind it without touching the classifier. Network verification attaches to Chrome directly over CDP. The test suite is hermetic, runs real Chrome, and uses no LLM. Roadmap: [docs/SPEC-V2.md](docs/SPEC-V2.md).
 
 ## License
 
