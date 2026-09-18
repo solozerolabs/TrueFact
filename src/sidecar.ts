@@ -19,6 +19,13 @@ export interface SidecarOptions {
   // by default (a body read is a CDP round-trip per response). `true` uses the
   // default pattern; pass a RegExp to override. The body is tested and dropped,
   // never stored (redaction discipline).
+  //
+  // Ceiling (experiment run #3): Network.getResponseBody only succeeds when the
+  // sidecar's CDP client can read the request's body. When ANOTHER CDP client
+  // owns the request (a user-driven Playwright attached over the same port), the
+  // body comes back empty and we simply skip — a MISS, never a false demote.
+  // Reliable on the Stagehand path; best-effort, fail-safe elsewhere. Status-
+  // based detection (5xx / 4xx-write / apiOrigins) is unaffected either way.
   bodyErrors?: boolean | RegExp;
 }
 

@@ -165,3 +165,33 @@ Full suite 206/206.
 
 This reframes PLAN.md §4.3: cross-origin isn't just popups/iframes — it's the
 normal API subdomain, and it's a false-`landed` today, not a missing feature.
+
+## Run #3 — the 200-that-lies on a LIVE GraphQL API, 2026-09-17
+
+Validates `bodyErrors` + `apiOrigins` against real third parties, not fixtures.
+Local page POSTs to two live endpoints; optimistic ✅ regardless.
+
+| Target | Real behavior | Verdict | Right? |
+|---|---|---|---|
+| countries.trevorblades.com (bad field) | HTTP 200 + `{"errors":[…]}` | `landed` (body unread) | **miss — see ceiling** |
+| jsonplaceholder.typicode.com/posts | HTTP 201, clean body, never persists | `landed`/`inconclusive` | ✓ correct — fake-persist is invisible to *any* network read |
+
+**What the miss taught us (verified by raw-CDP debug):** the POST returned 200,
+the sidecar *saw* it, but `Network.getResponseBody` came back **empty** — because
+the page was driven by a separate Playwright CDP client (`connectOverCDP`, the
+same shape as a user's own Playwright), which owns the request's body. A second
+CDP client can't read it. It **fails safe**: empty body → no demote → `landed`,
+never a cry-wolf (net was `[]`).
+
+**Conclusions:**
+1. `bodyErrors` is reliable on the **Stagehand path** (fixture test passes) and
+   best-effort / fail-safe on the **Playwright path** (misses the body, never
+   false-demotes). Documented as a known ceiling in `sidecar.ts`. Closing it for
+   the Playwright path needs sessionId-routed body reads (the same multi-target
+   work as §4.3) — deferred; the failure mode is a miss, not a false verdict.
+2. **jsonplaceholder is the honest boundary of the whole network wedge:** a clean
+   2xx with a plausible body that simply doesn't persist is invisible to network
+   truth. Only a post-write **read-back** (re-query the resource) can catch it —
+   a different mechanism than the sidecar. Worth noting in the roadmap.
+3. Status-based detection (5xx, 4xx-write, `apiOrigins`) is unaffected by the
+   body-read ceiling — those ride `responseReceived`, which always arrives.
