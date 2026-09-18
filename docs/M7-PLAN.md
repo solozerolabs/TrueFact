@@ -4,20 +4,15 @@ Status: decided 2026-09-17, from a 7-lens review (docs/context7, web research, G
 
 ## The decision
 
-**Build a driver seam and a single CDP-native reader. Migrate the Stagehand driver onto it and re-certify. Then add the second driver as a thin layer. Do NOT write per-framework readers, and do NOT market a lie-detector to drivers that don't lie.**
+**Build a driver seam. Each driver brings its own read source behind it (Stagehand → native `formattedTree`; Playwright → CDP). Do NOT migrate the certified Stagehand path onto CDP, and do NOT market a lie-detector to drivers that don't lie.**
+
+> **CORRECTION 2026-09-17.** Axis 1 below originally called for *one CDP-native reader for every driver*, migrating Stagehand onto it. That rested on a false premise — Stagehand v4 exposes no raw CDP (it brand-locks the browser handle), so "one reader, no port, serves all" is unreachable. See the dropped **Phase 1** note. The seam (Axis 2) and the UX call (Axis 3) stand; the reader-transport axis is superseded by **per-driver readers**.
 
 This is not "Option A (Playwright adapter)" or "Option B (CDP reader)" as posed. The review dissolved that framing into three separable axes, decided below.
 
-### Axis 1 — reader transport: CDP-native, for every driver. (was the A/B question)
+### Axis 1 — reader transport: ~~CDP-native, for every driver~~ → per-driver (superseded, see correction above)
 
-The empirical spike settles it. A raw-CDP reader:
-- reads **form values byte-identically** to today (because `safeRead` is already `page.evaluate` = CDP `Runtime.evaluate` underneath);
-- reproduces **every role signal** the classifier keys on (`status`/`alert`/`dialog`/`button`/`textbox`/`checkbox`), because the classifier needs self-consistency between before/after from one reader, not byte-parity with Stagehand;
-- is **~6x faster** (1.0ms vs 5.5ms per full read), which is latency the write hot path polls repeatedly.
-
-The ecosystem confirms it: Stagehand and Browser-Use **both** build their a11y tree from CDP `Accessibility.getFullAXTree`; Playwright **removed** `page.accessibility` in v1.57 and points you at CDP via `newCDPSession`. One CDP reader serves any Chrome driver from one codebase. This makes the README's already-published claim — "the reader attaches to Chrome, not the framework" — **true**, where today it is ~20% true (only the network sidecar is CDP; the tree/forms/session/field reads all run through Stagehand's `page.snapshot().formattedTree`).
-
-Rejected: keeping Stagehand's `formattedTree` and writing a second reader for Playwright. That is N readers forever, leaves the core claim aspirational, keeps the slow path, and — per the spike — forces byte-matching Stagehand's idiosyncratic vocabulary (`combobox`→`select`, whitespace, collapsed StaticText) which is exactly the fragile work.
+The spike showed a raw-CDP reader reproduces every classifier signal and is ~6x faster (1.0ms vs 5.5ms) — but reaching CDP *through Stagehand* is impossible (no `sendCDP`; the handle is brand-locked). So the "one reader serves all" prize is gone. The classifier only needs before/after self-consistency from *one* reader, and `formattedTree` already provides that for Stagehand (byte-identical form reads, all role signals). Each driver therefore keeps whatever read source it natively has; the `PageReader` seam hides the difference. Playwright, which removed `page.accessibility` in v1.57, brings CDP via `newCDPSession` (natively available there, unlike Stagehand).
 
 ### Axis 2 — the seam: adopt the codebase review's `PageReader` / `Driver`.
 
@@ -45,22 +40,26 @@ Re-certification is tiny-run, per the standing preference ([[prove-with-tiny-run
 **Phase 0 — the seam (zero behavior change). ✅ DONE 2026-09-17.**
 `src/driver.ts` has `PageReader`/`Driver` and `stagehandReader`/`stagehandDriver`. Read path (session/postcondition/declaration) retyped `Page`→`PageReader`; `readTree` delegates to `reader.snapshotTree()`; `pageId`→`reader.id`. `withReplay(source)` accepts a Stagehand (wrapped via `stagehandDriver`) **or** a ready `Driver` (the Phase 2 entry point), so all call sites and `launch()` are unchanged. `normalizeTree` stays in postcondition.ts (still tested there) and the Stagehand reader uses it — a CDP reader will emit normalized lines directly. **199 tests green (was 198, +1 proving the Driver boundary); the Stagehand path still calls `page.snapshot()`, so behavior is identical.**
 
-**Phase 1 — the shared CDP reader + Stagehand onto it + re-cert.**
-- `src/reader-cdp.ts`: `snapshotTree()` from `Accessibility.getFullAXTree` (spike sketch — DFS `childIds`, drop `ignored`/`none`/`generic`/`InlineTextBox`, append `[selected]`/`[checked]` from AX `properties`), and `evaluate()` via `Runtime.evaluate`. Reader takes a `cdp(method,params)` from the driver.
-- **Iframe stitching** — the one real cost. Enumerate frames, `getFullAXTree` per `frameId`, splice at the iframe node; cross-origin OOPIFs via `Target.attachedToTarget`. This reuses (and finally builds) the multi-target machinery `sidecar.ts` already flags as missing — which is also the §12 fintech-popup gap, so it pays double.
-- Switch `stagehandDriver` to source the reader from CDP (`stagehand.sendCDP`). A/B-diff vs `formattedTree` on all fixtures; update the ~15-20 assertions that hardcode Stagehand's line vocabulary to the CDP grammar; re-cert cry-wolf on the hermetic traps.
-- Opportunity (only if clean): drop the launch port and route the network sidecar through `driver.cdp` too, deleting `freePort`/`{port}`. Leave the proven port path if migration isn't clean.
+**Phase 1 — DROPPED 2026-09-17. The premise was false; per-driver readers instead.**
+
+The plan assumed the CDP reader would get its handle *from the driver* via `stagehand.sendCDP`, "so CDP reads work for `withReplay(stagehand)` with no port." **That method does not exist.** Stagehand v4 brand-locks its browser handle and exposes no raw CDP anywhere on `Page`/`BrowserContext`/`StagehandBrowser` — its own source comment: *"The private brand prevents arbitrary CDP connections from being passed to Stagehand."* The only way to reach CDP on Stagehand's Chrome is a second, independent CDP client over the debug port (what `sidecar.ts` already does), which needs `launch({port})`.
+
+So "one CDP reader, no port, serves every driver" is **unreachable**: Stagehand and a future Playwright driver will always have different transports. Once the unification prize is gone, migrating the *certified* Stagehand path onto CDP buys ~4.5ms/read and costs a full re-certification of the verdict engine — the trade the devil's advocate flagged and KISS rejects.
+
+**The call (user, 2026-09-17): per-driver readers. Skip the Stagehand rewrite.** Stagehand keeps its native `formattedTree` reader — the spike already showed it reads forms byte-identically and reproduces every classifier signal, and the classifier only needs before/after self-consistency from *one* reader, which per-driver readers preserve. The Phase 0 seam (`PageReader`) is exactly what makes this clean: each driver brings its own read source behind a uniform interface, and the classifier never knows the difference. Iframe stitching stays a standalone §12 gap fix, attached to whichever reader needs it, not a blocker here.
+
+**Phase 1.5 — redaction gate (before Phase 2, per user).** Capture-time redaction: drop auth/cookie headers, hash cookie values, mask declared fields, opt-in bodies. The devil ranked this above a second driver for adoption (§11.2); an ops/fintech ICP cannot instrument a tool that writes cookies to disk.
 
 **Phase 2 — the second driver.**
-`playwrightDriver(page)`: drive verbs wrap `page.click/fill/goto`; `evaluate` is Playwright's native `page.evaluate` (spike: drop-in); `cdp` from `newCDPSession(page)`; tab identity via object identity + `context.on('page')`. The reader is already shared and proven, so this is thin. Add `playwright` as a devDep + a `withPlaywrightBrowser` test fixture. First target: LLM-driven Playwright / Playwright-MCP (claim present); document the honest degrade for scripted use.
+`playwrightDriver(page)`: drive verbs wrap `page.click/fill/goto`; `evaluate` is Playwright's native `page.evaluate` (spike: drop-in); its `PageReader.snapshotTree()` comes from Playwright's own CDP (`newCDPSession(page)` → `Accessibility.getFullAXTree`, normalized to the same `role: text [markers]` line grammar) — Playwright exposes CDP where Stagehand does not; tab identity via object identity + `context.on('page')`. The seam is already proven, so this is a self-contained driver + its own reader, no change to the Stagehand path. Add `playwright` as a devDep + a `withPlaywrightBrowser` test fixture. First target: LLM-driven Playwright / Playwright-MCP (claim present); document the honest degrade for scripted use.
 
-Estimate: Phase 0 ~0.5d, Phase 1 ~2–3d (iframe stitching dominates), Phase 2 ~1d. The old "M7 = 1 day" was mispriced because it hid Phase 1.
+Estimate: Phase 0 ~0.5d (done), Phase 1.5 ~1d, Phase 2 ~1.5d (Playwright's AXTree→line-grammar normalizer is the new cost that the dropped Phase 1 would have shared). Phase 1's ~2–3d rewrite is gone.
 
 ## Open questions — answered
 
-1. **Trustworthy verdict vs zero-config breadth (§11.1).** Less of a tradeoff than feared: the CDP reader gives *both* — faster (trustworthy-cheap) and broader (any Chrome driver). Still, whether buyers *pay* is a user question; this plan doesn't substitute for the three conversations §10b ordered. It does make the eventual breadth real instead of claimed.
+1. **Trustworthy verdict vs zero-config breadth (§11.1).** The seam gives breadth (any driver plugs in) without touching the verdict logic, so trust is preserved by *not* rewriting the certified path. Whether buyers *pay* is a user question; this plan doesn't substitute for the three conversations §10b ordered.
 2. **Default capture size / redaction (§11.2, §12).** This is the **more urgent adoption blocker than a second driver** (devil, correctly). v2 capture stores DOM/bodies/cookies/storage = tokens + PII by default. Fix redaction-at-capture *before or alongside* Phase 2 — an ops/fintech ICP cannot instrument a tool that writes cookies to disk. Elevated to a Phase-1.5 gate.
-3. **Which second driver first (§11.3).** Playwright (Node, same process, lowest friction, matches the request) — but aimed at *LLM-driven* Playwright usage, not hand scripts. Browser-Use (Python, largest LLM-agent community, already CDP-native) is the strong second, and the shared CDP reader makes it a drive-verb shim.
+3. **Which second driver first (§11.3).** Playwright (Node, same process, lowest friction, matches the request) — but aimed at *LLM-driven* Playwright usage, not hand scripts. Browser-Use (Python, largest LLM-agent community, already CDP-native) is the strong second; being CDP-native it brings its own reader the same way Playwright does.
 
 ## The honest strategic caveat (unchanged)
 

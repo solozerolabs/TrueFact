@@ -97,7 +97,7 @@ TrueReplay never trusts the agent. It reads the page and the network. The agent'
 
 ## Status
 
-Works today with Stagehand 4.x. Playwright and Browser-Use drivers are next (the reader attaches to Chrome, not the framework). Hermetic test suite, real Chrome, no LLM. Roadmap: [docs/SPEC-V2.md](docs/SPEC-V2.md).
+Works today with Stagehand 4.x. Playwright and Browser-Use drivers are next: the verdict engine reads through one uniform page seam, so a new driver plugs in behind it without touching the classifier — each driver brings its own read source (Stagehand's a11y tree; Playwright's CDP). Network verification attaches to Chrome directly over CDP. Hermetic test suite, real Chrome, no LLM. Roadmap: [docs/SPEC-V2.md](docs/SPEC-V2.md).
 
 ## License
 
