@@ -42,5 +42,13 @@
     "playwright-core": "^1.63.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/solozerolabs/TrueReplay.git"
+  },
+  "homepage": "https://github.com/solozerolabs/TrueReplay#readme",
+  "bugs": {
+    "url": "https://github.com/solozerolabs/TrueReplay/issues"
   }
 }
