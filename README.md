@@ -2,6 +2,8 @@
 
 **Your browser agent said it placed the order. The order wasn't placed. You found out from a customer.**
 
+![TrueFact catching an optimistic-UI failure: the agent reported success, the server returned 500, `truefact assert` exits 1](demo/truefact.gif)
+
 TrueFact wraps your browser agent. After every action it reads the live page itself, and the network under it. Then it returns an independent verdict: **landed / did-not-land / inconclusive**. It never trusts what the agent claims. The gap between "agent said done" and "the world says done" is the whole product.
 
 - **Silent failures caught.** A click that lands on a cookie overlay. A form that quietly rejected. A page that shows success while the server returned 500. The agent reports all of these as done. TrueFact doesn't.
