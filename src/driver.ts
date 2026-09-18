@@ -41,7 +41,9 @@ export function stagehandReader(page: Page): PageReader {
     id: String((page as unknown as { pageId?: string }).pageId ?? ""),
     async snapshotTree() {
       try {
-        return normalizeTree((await page.snapshot()).formattedTree);
+        // includeIframes: a confirmation rendered inside an embedded checkout
+        // (Stripe, a payment widget) is otherwise invisible to the verdict.
+        return normalizeTree((await page.snapshot({ includeIframes: true })).formattedTree);
       } catch {
         return null; // snapshot throws mid-navigation; empty read is safe
       }

@@ -117,6 +117,8 @@ describe("withTrueFact: postcondition end to end", () => {
       // a new-password form is the Day 2 FP-guard case: a password field that is NOT a login wall
       "/pw": `<html><body><main><form><input id="p" name="pw" type="password" autocomplete="new-password"></form></main></body></html>`,
       "/login2": `<html><body><main><form onsubmit="event.preventDefault()"><input id="user" name="user"><input id="password" name="password" type="password"><button id="s" type="submit">Sign in</button></form></main></body></html>`,
+      // a same-origin iframe (srcdoc) whose confirmation the click reveals INSIDE the frame
+      "/iframe": `<html><body><main><button id="s" onclick="frames[0].document.body.insertAdjacentHTML('beforeend','<p role=status>Order placed</p>')">Go</button><iframe srcdoc="<body></body>"></iframe></main></body></html>`,
       "/mixed": `<html><body><main><form id="f" onsubmit="event.preventDefault()"><input name="email" required><input id="note" name="note"><button id="s" type="submit">Save</button></form></main></body></html>`,
       // value set by script, not the attribute, so form.reset() actually clears it
       "/reset": `<html><body><main><form id="f" onsubmit="event.preventDefault();this.reset()"><input name="email"><button id="s" type="submit">Go</button></form><script>document.querySelector('[name=email]').value='a@b.co'</script></main></body></html>`,
@@ -352,6 +354,13 @@ describe("withTrueFact: postcondition end to end", () => {
     const tr = withTrueFact(fakeStagehand(sh, await b.page(), { selector: "#s", method: "click" }), { waitMs: WAIT, screenshots: false });
     await tr.act("submit");
     assert.throws(() => tr.replay.assertLanded(), /did not land/);
+  });
+
+  it("a confirmation rendered inside a same-origin iframe is seen (includeIframes) -> landed", async () => {
+    await go("/iframe");
+    const s = await runAct({ selector: "#s", method: "click" });
+    assert.equal(s.verdict, "landed");
+    assert.equal(s.evidence.postcondition?.reason, "confirmation");
   });
 
   it("D17: a page that mutates forever but navigates on click -> landed / navigated (unsettled must not mask it)", async () => {
