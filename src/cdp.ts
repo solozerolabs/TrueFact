@@ -9,6 +9,12 @@
 // cross-origin iframes need Target.setAutoAttach{flatten} + sessionId routing;
 // deferred to v2.
 import { Socket } from "node:net";
+import { StringDecoder } from "node:string_decoder";
+
+// A command that never gets a reply (the browser crashed, the tab closed, the
+// peer went away) resolves to undefined after this, so a verdict read fails
+// open (skipped) instead of hanging the whole run forever.
+const CMD_TIMEOUT_MS = 10000;
 
 export interface CdpConn {
   /** Send a CDP command and await its result (id-correlated). */
@@ -50,7 +56,7 @@ export async function cdpConnect(port: number): Promise<CdpConn | null> {
         return;
       }
       if (typeof msg.id === "number" && pending.has(msg.id)) {
-        pending.get(msg.id)!(msg.result);
+        pending.get(msg.id)!(msg.result); // an {id,error} reply has no result → undefined
         pending.delete(msg.id);
         return;
       }
@@ -59,13 +65,26 @@ export async function cdpConnect(port: number): Promise<CdpConn | null> {
         if (hs) for (const h of hs) h(msg.params ?? {});
       }
     };
+    // On close/error, settle every in-flight command to undefined — nothing must
+    // wait forever on a dead socket. Each resolver clears its own timeout.
+    const drain = () => {
+      for (const fn of pending.values()) fn(undefined);
+      pending.clear();
+    };
+    ws.onclose = drain;
 
     return {
       cmd: (method, params) =>
         new Promise((resolve) => {
           const cid = ++id;
-          pending.set(cid, resolve);
-          ws.send(JSON.stringify({ id: cid, method, params }));
+          if (ws.readyState !== 1 /* OPEN */) return resolve(undefined);
+          const timer = setTimeout(() => { if (pending.delete(cid)) resolve(undefined); }, CMD_TIMEOUT_MS);
+          pending.set(cid, (result) => { clearTimeout(timer); resolve(result); });
+          try {
+            ws.send(JSON.stringify({ id: cid, method, params }));
+          } catch {
+            if (pending.delete(cid)) { clearTimeout(timer); resolve(undefined); }
+          }
         }),
       on: (method, handler) => {
         const hs = handlers.get(method) ?? [];
@@ -104,11 +123,12 @@ export function cdpConnectFd(fd: number): CdpConn {
 export function cdpConnectSocket(sock: Socket): CdpConn {
   let buf = "";
   let id = 0;
+  const decoder = new StringDecoder("utf8"); // holds a split multibyte char across chunks
   const pending = new Map<number, (result: unknown) => void>();
   const handlers = new Map<string, ((params: Record<string, unknown>) => void)[]>();
 
   sock.on("data", (d: Buffer) => {
-    buf += d.toString("utf8");
+    buf += decoder.write(d);
     let nl: number;
     while ((nl = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, nl);
@@ -130,20 +150,26 @@ export function cdpConnectSocket(sock: Socket): CdpConn {
       }
     }
   });
-  sock.on("error", () => {
-    /* peer gone — pending commands stay unresolved; fail-open covers the caller */
-  });
+  // Peer gone (crash / socket closed): settle every in-flight command to
+  // undefined so a read fails open instead of hanging forever.
+  const drain = () => {
+    for (const fn of pending.values()) fn(undefined);
+    pending.clear();
+  };
+  sock.on("error", drain);
+  sock.on("close", drain);
 
   return {
     cmd: (method, params) =>
       new Promise((resolve) => {
         const cid = ++id;
-        pending.set(cid, resolve);
+        if (sock.destroyed) return resolve(undefined);
+        const timer = setTimeout(() => { if (pending.delete(cid)) resolve(undefined); }, CMD_TIMEOUT_MS);
+        pending.set(cid, (result) => { clearTimeout(timer); resolve(result); });
         try {
           sock.write(JSON.stringify({ i: cid, m: method, p: params ?? {} }) + "\n");
         } catch {
-          pending.delete(cid);
-          resolve(undefined);
+          if (pending.delete(cid)) { clearTimeout(timer); resolve(undefined); }
         }
       }),
     on: (method, handler) => {

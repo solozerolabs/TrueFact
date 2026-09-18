@@ -60,6 +60,10 @@ function gateCmd(files: string[], flags: Record<string, string>): number {
     return 2;
   }
   const max = flags["max-did-not-land"] !== undefined ? Number(flags["max-did-not-land"]) : 0.05;
+  if (!Number.isFinite(max) || max < 0 || max > 1) {
+    process.stderr.write(`gate: --max-did-not-land must be a fraction 0..1 (got ${JSON.stringify(flags["max-did-not-land"])})\n`);
+    return 2;
+  }
   const s = fleetOf(files);
   const over = s.didNotLandRate > max;
   process.stdout.write(`${s.runs} runs · did-not-land ${pct(s.didNotLandRate)} (max ${pct(max)}) · ${over ? "FAIL" : "OK"}\n`);
