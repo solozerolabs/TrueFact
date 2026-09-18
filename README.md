@@ -58,6 +58,27 @@ export default (v) =>
 truefact assert run.jsonl --with assertions.mjs   # exits 1 if any write step fails
 ```
 
+## Let a coding agent verify its own feature
+
+Your coding agent said it wired up "Sign in." The redirect works, the dashboard renders, the tests are green. But the session cookie was never set — the first protected request 401s in production. Green tests pass on code that looks logged in. TrueFact is the acceptance check the agent can't fake: after it ships a web change, drive the real flow and ask the server who you are.
+
+```ts
+// the agent just implemented login — prove the session is real, not just the redirect
+await tr.page.goto("http://localhost:3000/login");
+await tr.act("sign in as the demo user");
+await tr.act("open the dashboard", {
+  expect: [
+    { kind: "probe", get: "/api/me", text: /"authenticated":true/ }, // the server agrees you're in
+    { kind: "text", matches: /Signed in as/, role: "status" },        // and the UI reflects it
+  ],
+});
+if (tr.replay.verdict !== "landed") process.exit(1);   // auth is broken — fail the PR
+```
+
+"I implemented it, tests pass" is the untrusted channel. The verdict is whether the server actually knows you're authenticated. Wired into the same `truefact assert` gate, a coding agent can't merge a feature that only works in its own description.
+
+> Scope: TrueFact checks what a browser reaches — the running app, its pages, its network. Not your unit tests or your build; the thing your users actually touch.
+
 ## Precision, when a write matters
 
 Auto verdicts need no setup. For the writes you can't get wrong, declare what "landed" means. Pass data, never a callback:
