@@ -5,6 +5,17 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "bin": {
     "truefact": "dist/cli.js"
   },
@@ -14,6 +25,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
     "prepublishOnly": "tsc",
     "test": "node --import tsx --test-concurrency=1 --test \"test/*.test.ts\"",
     "probe": "node scripts/probe-stagehand.mjs",
@@ -34,6 +46,11 @@
   "license": "MIT",
   "peerDependencies": {
     "@browserbasehq/stagehand": "^4.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@browserbasehq/stagehand": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@browserbasehq/stagehand": "^4.1.0",

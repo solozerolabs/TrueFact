@@ -6,7 +6,10 @@
 // Bring-your-own-browser? Use `withTrueFact(driver)` directly (network is then
 // opt-in via { network: { port } }, since you own the launch). See README.
 import { createServer } from "node:net";
-import { localBrowser, Stagehand } from "@browserbasehq/stagehand";
+// Type-only: the runtime import is dynamic (below), so importing the library —
+// or running any CLI command — does not require Stagehand to be installed. Only
+// launch() itself, the Stagehand entry point, loads it.
+import type { localBrowser, Stagehand } from "@browserbasehq/stagehand";
 import { withTrueFact, type Wrapped, type TrueFactOptions } from "./index.js";
 
 /** An ephemeral free TCP port (bind :0, read it, release). */
@@ -46,19 +49,25 @@ export interface Launched extends Wrapped {
 export async function launch(opts: LaunchOptions = {}): Promise<Launched> {
   const { model, headless, port: portOpt, ...replayOpts } = opts;
   const port = portOpt ?? (await freePort());
+  const { localBrowser, Stagehand } = await import("@browserbasehq/stagehand");
   const browser = await localBrowser.launch({ headless: headless ?? true, port });
-  // Cast: Stagehand types modelName as a 140-model literal union; we accept any
-  // string so callers aren't pinned to our copy of that list.
-  const createOpts = { browser, logging: { level: "error" }, ...(model ? { model } : {}) } as Parameters<typeof Stagehand.create>[0];
-  const stagehand = await Stagehand.create(createOpts);
-  const wrapped = withTrueFact(stagehand, { ...replayOpts, network: { port } });
-  const closeReplay = wrapped.close;
-  return Object.assign(wrapped, {
-    stagehand,
-    browser,
-    close: async () => {
-      await closeReplay();
-      await browser.close();
-    },
-  });
+  try {
+    // Cast: Stagehand types modelName as a 140-model literal union; we accept any
+    // string so callers aren't pinned to our copy of that list.
+    const createOpts = { browser, logging: { level: "error" }, ...(model ? { model } : {}) } as Parameters<typeof Stagehand.create>[0];
+    const stagehand = await Stagehand.create(createOpts);
+    const wrapped = withTrueFact(stagehand, { ...replayOpts, network: { port } });
+    const closeReplay = wrapped.close;
+    return Object.assign(wrapped, {
+      stagehand,
+      browser,
+      close: async () => {
+        await closeReplay();
+        await browser.close();
+      },
+    });
+  } catch (e) {
+    await browser.close().catch(() => {}); // don't leak Chrome if Stagehand.create throws
+    throw e;
+  }
 }
