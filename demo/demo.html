@@ -6,7 +6,7 @@
           --green:#4ade80; --red:#ff6b78; --amber:#fbbf47; --prompt:#7ab0ff; --accent:#a99bff; }
   * { box-sizing:border-box; margin:0; }
   html,body { height:100%; }
-  body { background:var(--bg); display:flex; align-items:center; justify-content:center;
+  body { background:var(--bg); color:var(--fg); display:flex; align-items:center; justify-content:center;
          font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; }
   .term { width:920px; background:var(--panel); border-radius:12px; overflow:hidden;
           box-shadow:0 24px 80px rgba(0,0,0,.55); border:1px solid #1c2434; }
@@ -38,18 +38,19 @@
 // The whole demo, as a timeline of lines. `t` = ms to wait before showing.
 // Output blocks are the REAL output of `truefact assert` on a recorded run.
 const steps = [
-  { t:400,  html:'<span class="dim"># the page showed ✅. so did the agent. ask the world instead:</span>' },
+  { t:400,  html:'<span class="dim"># the agent reported the checkout succeeded.</span>' },
+  { t:250,  html:'<span class="dim"># re-check that recorded run against what the server did:</span>' },
   { type:'$ truefact assert checkout.jsonl --with assertions.mjs', t:600 },
-  { t:900,  html:'<span class="red">FAIL  #4  act: click the \'Place order\' button</span>' },
-  { t:120,  html:'          <span class="dim">a request failed behind this step</span>' },
-  { t:350,  html:'<span class="red">FAIL  #7  act: click the \'Place order\' button</span>' },
-  { t:120,  html:'          <span class="dim">a request failed behind this step</span>' },
+  { t:900,  html:'<span class="red">FAIL</span>  #4  act: click the \'Place order\' button' },
+  { t:120,  html:'      <span class="dim">the POST behind this step returned 500</span>' },
+  { t:350,  html:'<span class="red">FAIL</span>  #7  act: click the \'Place order\' button' },
+  { t:120,  html:'      <span class="dim">the POST behind this step returned 500</span>' },
   { t:500,  html:'' },
   { t:120,  html:'<span class="amber">1/3 write steps pass  (2 failed)</span>' },
-  { t:600,  html:'<span class="prompt">$</span> <span class="dim">echo exit=$?</span>' },
-  { t:250,  html:'<span class="red">exit=1</span>  <span class="dim"># CI fails on the lie the agent told</span>' },
-  { t:900,  html:'<div class="tag">The agent said <b>done</b>. The server returned <b>500</b>. '
-                +'TrueFact caught it — deterministically, no LLM.</div>' },
+  { t:600,  html:'<span class="prompt">$</span> echo $?' },
+  { t:250,  html:'<span class="red">1</span>  <span class="dim"># non-zero → the CI gate blocks the merge</span>' },
+  { t:900,  html:'<div class="tag">The page showed <b>✅</b>. The server returned <b>500</b>. '
+                +'TrueFact caught it — no LLM, no flaky retries.</div>' },
 ];
 const body = document.getElementById('body');
 const wait = ms => new Promise(r => setTimeout(r, ms));
