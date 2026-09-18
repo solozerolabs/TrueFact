@@ -8,10 +8,8 @@ The hard case is optimistic UI. The page shows a success screen while the server
 
 New this week: `truefact watch`. Point it at any Chrome with a debug port. It verifies writes for any framework, whether that is Browser-Use, Puppeteer, Playwright, or a human clicking. It wraps nothing.
 
-Here is the finding that surprised us. Across a 520-write benchmark over four models from weak to strong, the agents reported success on 46% of writes that never landed. The rate did not fall as the model got stronger. A better agent does not lie less. With the network read on, TrueFact left 0% of those undetected, 0 out of 60 on each model.
+The number we protect first is false halts. A verifier that stops a good run is worse than useless. Across a 520-write benchmark over four models, TrueFact raised zero false halts, 0 out of 279. In observe mode, `watch` held the same line across 20 live sites, background telemetry and all. Still zero.
 
-The number we protect first is the other side: false halts. A verifier that stops a good run is worse than useless. Across the same benchmark TrueFact raised zero, 0 out of 279. In observe mode, `watch` held the same line across 20 live sites, background telemetry and all. Still zero.
+We are honest about the price. To hold zero false halts, TrueFact returns inconclusive on ~14% of good writes rather than guess. It is precision-first by design: it would rather say inconclusive than call a good run bad. Declare a postcondition (`expect`, including a `probe` against your server) on the writes that matter and most of that inconclusive turns into a real landed / did-not-land.
 
-We are honest about the one gap. A write that looks clean but never persists on the server is what no network read can close. TrueFact is precision-first by design. It would rather say inconclusive than call a good run bad.
-
-Install from git, no build step. It runs today with Stagehand 4.x. Playwright is next.
+Runs today with Stagehand 4.x and Playwright. Install from npm, or from git (a `prepare` step builds it).

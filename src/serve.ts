@@ -50,6 +50,8 @@ export async function startServe(opts: ServeOptions): Promise<ServeSession | nul
   // perform() until `after` arrives. A second `before` while parked is an error.
   let parked: { resolve: (v: unknown) => void; reject: (e: Error) => void; beforeDone: () => void } | null = null;
   let running: Promise<unknown> | null = null;
+  let armed = false; // the pipeline reached perform() and captured the before-state
+  let stepsAtBefore = 0; // so `after` can tell a fresh step from the previous one
 
   const { port, cdpFd, apiOrigins, bodyErrors, ...replayOpts } = opts;
   void port;
@@ -80,8 +82,10 @@ export async function startServe(opts: ServeOptions): Promise<ServeSession | nul
       }
       if (req.op === "before") {
         if (parked) return { id: req.id, ok: false, error: "a bracket is already open; send after first" };
+        armed = false;
+        stepsAtBefore = w.replay.steps.length;
         const beforeDone = new Promise<void>((res) => {
-          parked = { resolve: () => {}, reject: () => {}, beforeDone: res };
+          parked = { resolve: () => {}, reject: () => {}, beforeDone: () => { armed = true; res(); } };
         });
         const expect = req.expect;
         running =
@@ -89,10 +93,21 @@ export async function startServe(opts: ServeOptions): Promise<ServeSession | nul
             ? w.page.goto(req.url ?? "")
             : w.act((req.action ?? { method: "click" }) as never, expect ? { expect } : undefined);
         running.catch(() => {}); // surfaced through `after`; never unhandled
-        await beforeDone;
+        // Race the capture against the action settling: a validation error (a bad
+        // `expect`) throws inside run() BEFORE perform() parks, so beforeDone would
+        // never resolve. If the action settles first, the bracket never armed.
+        await Promise.race([beforeDone, running.then(() => {}, () => {})]);
+        if (!armed) {
+          const r = running;
+          parked = null;
+          running = null;
+          let error = "the action failed before the before-state was captured";
+          try { await r; } catch (e) { error = e instanceof Error ? e.message : String(e); }
+          return { id: req.id, ok: false, error };
+        }
         return { id: req.id, ok: true };
       }
-      // after
+      if (req.op !== "after") return { id: (req as { id?: number }).id, ok: false, error: `unknown op ${JSON.stringify((req as { op?: unknown }).op)}` };
       if (!parked || !running) return { id: req.id, ok: false, error: "no open bracket" };
       const p = parked;
       const r = running;
@@ -105,7 +120,9 @@ export async function startServe(opts: ServeOptions): Promise<ServeSession | nul
       } catch {
         /* the caller's own throw, re-raised by run(); the step is still recorded */
       }
-      return { id: req.id, ok: true, step: w.replay.steps.at(-1) };
+      // Only return a step if THIS bracket recorded one; never echo the prior step.
+      const step = w.replay.steps.length > stepsAtBefore ? w.replay.steps.at(-1) : undefined;
+      return { id: req.id, ok: true, step };
     },
   };
 }
@@ -116,10 +133,11 @@ export async function runServeCli(argv: string[], io: { stdin: NodeJS.ReadableSt
   for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) flags[argv[i].slice(2)] = argv[i + 1]?.startsWith("--") || argv[i + 1] === undefined ? "" : argv[++i];
   const port = flags.port ? Number(flags.port) : undefined;
   const cdpFd = "cdp-fd" in flags ? Number(flags["cdp-fd"]) : undefined;
-  if (!port && cdpFd === undefined) {
-    process.stderr.write("usage: truefact serve (--cdp-fd <n> | --port <n>) [--jsonl run.jsonl] [--api-origins a.com,b.com] [--body-errors] [--screenshots]\n");
-    return 2;
-  }
+  const usage = () => (process.stderr.write("usage: truefact serve (--cdp-fd <n≥3> | --port <n>) [--jsonl run.jsonl] [--api-origins a.com,b.com] [--body-errors] [--screenshots]\n"), 2);
+  if (!port && cdpFd === undefined) return usage();
+  // A bare `--cdp-fd` parses to 0 (= stdin); an fd must be an integer ≥ 3.
+  if (cdpFd !== undefined && (!Number.isInteger(cdpFd) || cdpFd < 3)) return usage();
+  if (port !== undefined && (!Number.isInteger(port) || port <= 0)) return usage();
   const session = await startServe({
     port,
     cdpFd,
@@ -148,7 +166,9 @@ export async function runServeCli(argv: string[], io: { stdin: NodeJS.ReadableSt
       if (!line) continue;
       let req: ServeRequest;
       try {
-        req = JSON.parse(line) as ServeRequest;
+        const parsed = JSON.parse(line);
+        if (!parsed || typeof parsed !== "object" || !("op" in parsed)) throw new Error("not a request object");
+        req = parsed as ServeRequest;
       } catch {
         io.stdout.write(JSON.stringify({ ok: false, error: "bad json" }) + "\n");
         continue;

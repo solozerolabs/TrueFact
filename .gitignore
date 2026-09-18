@@ -12,9 +12,11 @@ bench/out/*
 !bench/out/oracle.jsonl
 bench/showcase/*
 !bench/showcase/showcase.md
-.truereplay/
 demo-run.jsonl
 
 # local experiment scratch
 _run-*.mjs
 saucedemo-*.jsonl
+
+# build output — npm ships it via "files"+prepublishOnly; git installs build it via "prepare"
+dist/

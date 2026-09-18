@@ -132,9 +132,9 @@ describe("truefact watch: passive network-truth verdicts", () => {
 
   // Cry-wolf tightenings from the real-site experiment (run #4). Passive observe
   // mode must not accuse on pervasive same-origin BACKGROUND traffic.
-  it("cry-wolf: a 403 auth failure on a write is NOT accused (background JWT probe)", async () => {
+  it("cry-wolf: a 403 auth failure on a write is a MISS — neither accused nor falsely landed", async () => {
     const o = await run("forbidden-page");
-    assert.ok(!o.some((w) => w.verdict === "did-not-land"), "401/403 auth must not cry wolf in passive mode");
+    assert.equal(o.length, 0, "401/403 auth is dropped in passive mode: no did-not-land, and no false landed either");
   });
 
   it("cry-wolf: a 2xx whose body load is then canceled is landed, not did-not-land (beacon abort)", async () => {

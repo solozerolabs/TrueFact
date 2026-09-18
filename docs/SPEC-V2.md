@@ -132,7 +132,7 @@ Assertions run **live** (inside the run, gating the verdict) and **offline** (§
 ### 5.1 Re-assert (offline, exact, $0)
 
 ```
-truefact assert runs/2026-09-17.jsonl --with assertions.ts
+truefact assert runs/2026-09-17.jsonl --with assertions.mjs
 ```
 
 Evaluates the assertion file against every stored packet. No browser, no model, milliseconds. Change the regex, re-run, see which of 10,000 historical steps now fail. This is the "unit test from a flaky run" claim and it is fully true, because assertions only ever read packets. Ceiling: only as rich as what was captured (defaults vs opt-in `dom`/bodies).

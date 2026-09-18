@@ -128,4 +128,19 @@ describe("truefact serve: DOM+network bracket over raw CDP for a caller-owned br
     assert.equal(dup.ok, false);
     await serve.handle({ id: 99, op: "after" });
   });
+
+  it("a before with an invalid declaration fails fast (ok:false), never deadlocks", async () => {
+    await bracket("nav", { url: `${base}/ok` }, () => pw.goto(`${base}/ok`));
+    // a vacuous probe (no matcher) throws in run() BEFORE the before-state parks.
+    const r = await serve.handle({ id: 500, op: "before", kind: "write", action: { selector: "#go", method: "click" }, expect: [{ kind: "probe", get: "/x" }] } as never);
+    assert.equal(r.ok, false);
+    // the pipeline is not stuck: a normal bracket still works afterwards.
+    const ok = await bracket("write", { action: { selector: "#go", method: "click" } }, () => pw.click("#go"));
+    assert.equal(ok.verdict, "landed");
+  });
+
+  it("an unknown op is rejected, not treated as after", async () => {
+    const r = await serve.handle({ id: 600, op: "sideways" } as never);
+    assert.equal(r.ok, false);
+  });
 });
