@@ -20,6 +20,10 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
       - run: npm install -g npm@latest # OIDC needs npm >= 11.5.1; Node 22 ships 10.x
-      - run: npm ci # runs `prepare` → tsc
-      - run: npm publish --provenance --access public
+      # npm v12 turns off dependency install scripts by default; --ignore-scripts
+      # makes install deterministic and we build explicitly rather than lean on
+      # the `prepare` lifecycle. Our deps need no postinstall to compile.
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm publish --provenance --access public --ignore-scripts
         # No NODE_AUTH_TOKEN with trusted publishing (OIDC).
