@@ -392,7 +392,7 @@ export interface FieldResult extends Outcome {
 }
 
 const SELECT_METHODS = new Set(["selectOption", "selectOptionFromDropdown"]);
-const FIELD_METHODS = new Set(["fill", "type", ...SELECT_METHODS]);
+export const FIELD_METHODS = new Set(["fill", "type", ...SELECT_METHODS]);
 // From Stagehand's action handlers (extension METHOD_HANDLER_MAP).
 const NON_MUTATING = new Set([
   "hover", "scroll", "scrollTo", "scrollIntoView", "scrollByPixelOffset", "nextChunk", "prevChunk", "mouse.wheel",

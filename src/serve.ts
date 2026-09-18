@@ -16,7 +16,7 @@
 // (write/nav), and the verdict is what the page and the network showed.
 import { cdpConnect, cdpConnectFd } from "./cdp.js";
 import { cdpDriver, type CdpAction } from "./driver-cdp.js";
-import { withTrueFact, type Step, type TrueFactOptions, type Wrapped } from "./index.js";
+import { withTrueFact, retryableOf, type Step, type TrueFactOptions, type Wrapped } from "./index.js";
 import type { Declaration } from "./declaration.js";
 
 export interface ServeOptions extends Omit<TrueFactOptions, "network"> {
@@ -33,7 +33,7 @@ export type ServeRequest =
   | { id: number; op: "after"; threw?: string }
   | { op: "close" };
 
-export type ServeReply = { id?: number; ok: true; step?: Step } | { id?: number; ok: false; error: string };
+export type ServeReply = { id?: number; ok: true; step?: Step; retryable?: boolean } | { id?: number; ok: false; error: string };
 
 export interface ServeSession {
   /** Handle one request; resolves with the reply to write back. */
@@ -122,7 +122,7 @@ export async function startServe(opts: ServeOptions): Promise<ServeSession | nul
       }
       // Only return a step if THIS bracket recorded one; never echo the prior step.
       const step = w.replay.steps.length > stepsAtBefore ? w.replay.steps.at(-1) : undefined;
-      return { id: req.id, ok: true, step };
+      return { id: req.id, ok: true, step, retryable: step ? retryableOf(step) : undefined };
     },
   };
 }

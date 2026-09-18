@@ -89,6 +89,9 @@ describe("truefact serve: DOM+network bracket over raw CDP for a caller-owned br
     const a = await serve.handle({ id, op: "after", ...(threw ? { threw } : {}) });
     assert.equal(a.ok, true, JSON.stringify(a));
     const step = (a as { step?: Step }).step!;
+    // The recovery contract rides on the serve reply too (the one integration
+    // that reads it), so a caller can gate an auto-retry without the full step.
+    assert.equal(typeof (a as { retryable?: boolean }).retryable, "boolean", "serve reply carries retryable");
     steps.push(step);
     return step;
   }

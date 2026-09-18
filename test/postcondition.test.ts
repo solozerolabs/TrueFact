@@ -346,6 +346,7 @@ describe("withTrueFact: postcondition end to end", () => {
     const res = await act("place the order");
     assert.equal(res.truefact.verdict, "landed");
     assert.ok(typeof res.truefact.why === "string" && res.truefact.why.length > 0, "why is a non-empty reason string");
+    assert.equal(res.truefact.retryable, false, "a landed action is never retryable (repeating it is the double charge)");
   });
 
   it("replay.assertLanded() throws with the reason on a did-not-land run", async () => {

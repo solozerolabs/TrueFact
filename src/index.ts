@@ -16,6 +16,7 @@ import {
   applyNetwork,
   captureState,
   decideWrite,
+  FIELD_METHODS,
   readTree,
   redactLen,
   sessionVerdict,
@@ -110,13 +111,35 @@ export interface Replay {
 }
 
 /** The verdict, attached to what `act()` returns, so an agent loop reads it off
- *  the result instead of digging into replay.steps. `why` is a one-line reason. */
+ *  the result instead of digging into replay.steps. `why` is a one-line reason.
+ *  `retryable` says whether repeating the identical action is safe (see retryableOf). */
 export interface VerdictView {
   verdict: Verdict;
   reason: string;
   confidence: string;
   why: string;
+  retryable: boolean;
   step: Step;
+}
+
+/**
+ * Is it safe to repeat this exact action? `true` means retrying it cannot
+ * double-apply a server write — NOT that a retry will succeed. So it is true in
+ * one case only: a `did-not-land` field write (`fill`/`type`/`select`) whose
+ * value never took, where the step is *purely* those field methods (the value
+ * never left the input, no click was submitted). Everything else is `false`:
+ *   - `landed` — retrying it IS the double charge.
+ *   - every `inconclusive` — we don't know it didn't land; never auto-retry.
+ *   - `network-error` (incl. a null-status wire failure) — the request left the
+ *     browser and the server may have applied it.
+ *   - a mixed fill+click `field-mismatch` — the click may have submitted.
+ *   - `validation-error`, `declared-unmet`, an obstruction — the caller decides.
+ */
+export function retryableOf(step: Step): boolean {
+  const post = step.evidence.postcondition;
+  if (step.verdict !== "did-not-land" || post?.reason !== "field-mismatch") return false;
+  const methods = (step.attempt ?? []).map((a) => a.method).filter(Boolean) as string[];
+  return methods.length > 0 && methods.every((m) => FIELD_METHODS.has(m));
 }
 
 /** A one-line, human/agent-readable reason for a write step's verdict. */
@@ -134,6 +157,7 @@ const verdictView = (step: Step): VerdictView => ({
   reason: step.evidence.postcondition?.reason ?? "no-evidence",
   confidence: step.evidence.postcondition?.confidence ?? "heuristic",
   why: whyOf(step),
+  retryable: retryableOf(step),
   step,
 });
 

@@ -51,5 +51,11 @@ truefact watch --port 9222 [--api-origins api.host] [--jsonl run.jsonl]
 - **inconclusive** — couldn't tell. Do NOT blindly retry (it may have landed);
   declare a postcondition or check by hand.
 
+For automatic retries, gate on `res.truefact.retryable` (also on the `serve`
+reply): `true` only when repeating the action can't double-apply a write — a
+`did-not-land` field write that never took. It is `false` for every
+`inconclusive`, every `network-error`, and every `landed`, so a retry loop can't
+double-charge a payment.
+
 Scope: TrueFact checks what a browser reaches (the running app, its pages, its
 network) — not your unit tests or build.

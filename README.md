@@ -177,6 +177,8 @@ Zero false halts costs coverage: on the same benchmark, ~14% of *good* writes ca
 - **`did-not-land`** — a mechanism said it failed (server 5xx/4xx-on-write, a corroborated validation error, an unmet declaration). Stop; the write is not there.
 - **`inconclusive`** — TrueFact couldn't tell. **Do not blindly retry** (the write may have landed). Either declare what "landed" means for that action (`expect: [...]`, including a `probe` against your server), or check by hand.
 
+For an agent loop that retries automatically, read **`res.truefact.retryable`**: it is `true` only when repeating the exact action cannot double-apply a server write — a `did-not-land` field write whose value never took. It is `false` for every `inconclusive`, every `network-error` (the request may have reached the server), and every `landed` — so an auto-retry can't double-charge a payment. `truefact serve` returns the same flag on its reply.
+
 Most `inconclusive` verdicts disappear once you declare a postcondition on the writes that matter.
 
 ## The rule
