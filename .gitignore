@@ -3,6 +3,9 @@ node_modules/
 *.log
 .env
 OUTREACH.md
+
+# business / strategy docs — never ship to the public OSS repo
+strategy/
 bench/out/*
 !bench/out/report.md
 !bench/out/report.json
