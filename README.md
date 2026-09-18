@@ -11,8 +11,10 @@ TrueFact wraps your browser agent and, after every action, reads the live page i
 ## Quickstart
 
 ```bash
-npm install truefact
+npm install github:solozerolabs/TrueReplay   # or: bun add github:solozerolabs/TrueReplay
 ```
+
+Installs straight from git; the compiled `dist/` is committed, so no build step runs on your machine.
 
 ```ts
 import { launch } from "truefact";
