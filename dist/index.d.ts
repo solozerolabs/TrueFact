@@ -74,6 +74,7 @@ export interface TrueFactOptions {
     network?: {
         port: number;
         apiOrigins?: string[];
+        bodyErrors?: boolean | RegExp;
     };
     redactFields?: (string | RegExp)[];
 }

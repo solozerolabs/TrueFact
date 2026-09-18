@@ -122,7 +122,14 @@ export interface TrueFactOptions {
   // origin only). Name your write host(s) for a split-origin app (app.x.com ->
   // api.x.com, *.supabase.co, api.stripe.com); an explicit allowlist keeps the
   // cry-wolf guard intact — a third-party analytics 500 still never fires.
-  network?: { port: number; apiOrigins?: string[] };
+  network?: {
+    port: number;
+    apiOrigins?: string[];
+    // Opt-in: also demote on a 2xx whose body says the write failed (GraphQL
+    // `{"errors":[…]}`, `{"success":false}`). true = default pattern; a RegExp
+    // overrides it. Costs one CDP body read per mutating 2xx. See sidecar.ts.
+    bodyErrors?: boolean | RegExp;
+  };
   // Length-mask the stored values of these form fields (matched by name/id):
   // strings match exactly, RegExps test the key. For PII that is not
   // secret-shaped (a name, an address) and so slips past the always-on
@@ -311,7 +318,7 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
   // enabling it here (before the first write's click) covers every later write.
   let sidecarPromise: Promise<Sidecar | null> | null = null;
   const sidecar = (): Promise<Sidecar | null> =>
-    (sidecarPromise ??= opts.network ? attachSidecar(opts.network.port) : Promise.resolve(null));
+    (sidecarPromise ??= opts.network ? attachSidecar(opts.network.port, { bodyErrors: opts.network.bodyErrors }) : Promise.resolve(null));
 
   const replay = new ReplayImpl(async (decls) => {
     const page = await activePage();
@@ -416,6 +423,7 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
     // this (the cry-wolf guard); a split-origin write host opts in explicitly.
     if (sc) {
       const pageOrigin = new URL(beforeState!.fp.href || "http://x").origin;
+      await sc.settle(); // let any in-flight 2xx body reads land before we read
       const errors = sc.errorsSince(netMark, [pageOrigin, ...(opts.network?.apiOrigins ?? [])]);
       const net = applyNetwork(verdict, errors);
       if (net) {

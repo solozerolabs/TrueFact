@@ -188,7 +188,7 @@ export function withTrueFact(source, opts = {}) {
     // Attach the network sidecar once, lazily. Network.enable is persistent, so
     // enabling it here (before the first write's click) covers every later write.
     let sidecarPromise = null;
-    const sidecar = () => (sidecarPromise ??= opts.network ? attachSidecar(opts.network.port) : Promise.resolve(null));
+    const sidecar = () => (sidecarPromise ??= opts.network ? attachSidecar(opts.network.port, { bodyErrors: opts.network.bodyErrors }) : Promise.resolve(null));
     const replay = new ReplayImpl(async (decls) => {
         const page = await activePage();
         await settle(page);
@@ -281,6 +281,7 @@ export function withTrueFact(source, opts = {}) {
         // this (the cry-wolf guard); a split-origin write host opts in explicitly.
         if (sc) {
             const pageOrigin = new URL(beforeState.fp.href || "http://x").origin;
+            await sc.settle(); // let any in-flight 2xx body reads land before we read
             const errors = sc.errorsSince(netMark, [pageOrigin, ...(opts.network?.apiOrigins ?? [])]);
             const net = applyNetwork(verdict, errors);
             if (net) {

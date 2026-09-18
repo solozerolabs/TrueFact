@@ -31,8 +31,9 @@ sell.** It only demoted on a same-origin HTTP ≥500. Real failed writes are:
 |---|---|---|---|
 | Server crash | 500/502/503 | caught | caught |
 | **Write rejected** | 402 declined, 422 invalid, 429 throttled, 401/403 | **missed** | **caught (4xx on POST/PUT/PATCH/DELETE)** |
-| 200-with-error-body | GraphQL `{"errors":[…]}`, Stripe `{success:false}` | missed | **planned, opt-in (§4)** |
-| Cross-origin / iframe / popup | Stripe iframe, PayPal popup | missed | **planned, multi-target (§4)** |
+| 200-with-error-body | GraphQL `{"errors":[…]}`, Stripe `{success:false}` | missed | **caught, opt-in `network.bodyErrors`** |
+| Cross-origin API host | app.x.com → api.x.com, *.supabase.co, api.stripe.com | missed | **caught, opt-in `network.apiOrigins`** |
+| iframe / popup (no readable response) | Stripe iframe, PayPal popup | missed | **planned, multi-target (§4)** |
 | Delayed / websocket | webhook confirm, async fraud check | missed | **planned (§4)** |
 
 The devil's-advocate and experimental agents reached the 4xx/body/cross-origin
@@ -87,12 +88,13 @@ Ranked by (developer UX impact) × (de-risks the "does it generalize" question) 
    unchanged. Effort: S–M. This also answers the Browser-Use question (§7) far
    better than a bespoke driver would.
 
-2. **200-with-error-body network demotion (opt-in).** Closes the GraphQL/Stripe
-   hole. Add `Network.getResponseBody` (read after `loadingFinished`, per the CDP
-   timing rule) for same-origin mutating requests, matched against a
-   caller-overridable pattern (default GraphQL `/"errors"\s*:\s*\[/` and
-   `/"success"\s*:\s*false/`). Opt-in, same-origin, only ever demotes, never
-   stores the body (redaction discipline). Effort: S–M.
+2. **200-with-error-body network demotion (opt-in). SHIPPED 2026-09-17.** Closes
+   the GraphQL/Stripe hole. `Network.getResponseBody` (read after
+   `loadingFinished`, per the CDP timing rule) for mutating 2xx requests, matched
+   against a caller-overridable pattern (default: non-empty GraphQL
+   `"errors":[{` and `"success":false`). Opt-in via `network.bodyErrors`, only
+   ever demotes, never stores the body. Tests in `test/sidecar-network.test.ts`
+   (off by default = stays landed; on = the 200-that-lies demotes).
 
 3. **Multi-target sidecar (popups / cross-origin iframes).** `Target.setAutoAttach
    {flatten:true}`, keyed event map across sessionIds. Without this the flagship

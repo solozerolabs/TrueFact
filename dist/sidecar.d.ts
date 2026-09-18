@@ -2,8 +2,12 @@ export interface NetError {
     url: string;
     status: number | null;
 }
+export interface SidecarOptions {
+    bodyErrors?: boolean | RegExp;
+}
 export interface Sidecar {
     mark(): number;
+    settle(): Promise<void>;
     errorsSince(mark: number, origins: string[]): NetError[];
     close(): void;
 }
@@ -17,4 +21,4 @@ export interface Sidecar {
  * NEW tab won't be network-observed until we follow Target.attachedToTarget
  * (SPEC-V2 §12 multi-target). The page-read verdict still covers that step.
  */
-export declare function attachSidecar(port: number): Promise<Sidecar | null>;
+export declare function attachSidecar(port: number, opts?: SidecarOptions): Promise<Sidecar | null>;
