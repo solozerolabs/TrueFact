@@ -35,7 +35,8 @@ export type PostReason =
   | "declared-met"
   | "declared-unmet"
   | "declared-unreadable"
-  | "network-error";
+  | "network-error"
+  | "network-ok"; // observe mode: a watched-origin write request the server accepted
 
 export interface FormValue {
   value: string; // passwords already stored as "<redacted:N>"

@@ -11,6 +11,11 @@ export interface Sidecar {
     errorsSince(mark: number, origins: string[]): NetError[];
     close(): void;
 }
+export declare const originOf: (u: string) => string;
+export declare const MUTATING: Set<string>;
+export declare const isWriteError: (status: number, method: string) => boolean;
+export declare const DEFAULT_BODY_ERR: RegExp;
+export declare const bodyErrorPattern: (opt: boolean | RegExp | undefined) => RegExp | null;
 /**
  * Attach a network-observing sidecar to the Chrome listening on `port`
  * (the browser must have been launched with `localBrowser.launch({ port })`).

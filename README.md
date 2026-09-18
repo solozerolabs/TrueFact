@@ -100,6 +100,16 @@ await tr.act({ selector: "#submit", method: "click" }); // verified: did it actu
 
 A Playwright action carries no self-report, so there's no claim to disbelieve — you still get the independent "did it land" read (did-not-land detection, optimistic-UI catch, obstruction detection). The page tree is read over CDP; the classifier is byte-for-byte the same one Stagehand runs through.
 
+## Watch any framework (no wrapping)
+
+Not using Stagehand or Playwright? Run your agent (Browser-Use, Puppeteer, a human) against a Chrome started with `--remote-debugging-port=9222`, then:
+
+```bash
+truefact watch --port 9222 [--api-origins api.yoursite.com] [--body-errors] [--jsonl run.jsonl]
+```
+
+`watch` attaches out-of-band and reports, per write request, whether the **server** accepted it — `landed` on a clean 2xx, `did-not-land` on a 5xx / 4xx-on-write / wire failure (and, with `--body-errors`, a 200 whose body says it failed). This is the **network-truth floor**: it verifies writes that hit the network, scoped to your page origin plus any `--api-origins`, with retry-collapse so a transient error that then succeeds never accuses. It does not (yet) render the DOM-based verdict the wrapper does — see [docs/WATCH-PLAN.md](docs/WATCH-PLAN.md). `--jsonl` writes the same tamper-evident chain `view`/`verify`/`fleet` consume.
+
 ## What gets stored
 
 The record holds verdicts, the a11y-tree diff, form field values, URLs and the agent's claim — never cookies, request headers or response bodies (they aren't captured at all). Password values are masked at capture; API keys, tokens and emails are scrubbed from every stored string before a step is written or hashed. For PII that isn't secret-shaped — a name, an SSN — name the fields and their values are length-masked:

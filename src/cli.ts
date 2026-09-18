@@ -7,6 +7,7 @@
 //   truefact fleet  <run.jsonl...>
 //   truefact gate   <run.jsonl...> [--max-did-not-land 0.05]
 //   truefact demo   — the optimistic-UI catch, keyless, in one command
+//   truefact watch  — attach to a running Chrome, verify writes for any framework
 //
 // `assert` re-runs an assertion module against a recorded run, offline, and
 // exits 1 if any write step fails — a CI gate over stored runs. `verify`
@@ -116,6 +117,7 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "fleet") return fleetCmd(parseArgs(argv.slice(1)).files);
   if (cmd === "gate") { const { files, flags } = parseArgs(argv.slice(1)); return gateCmd(files, flags); }
   if (cmd === "demo") { const { runDemo } = await import("./demo.js"); return runDemo(); }
+  if (cmd === "watch") { const { runWatchCli } = await import("./watch.js"); return runWatchCli(argv.slice(1)); }
   process.stderr.write(
     "usage:\n" +
     "  truefact assert <run.jsonl> --with <assertions.mjs>\n" +
@@ -123,7 +125,8 @@ async function main(argv: string[]): Promise<number> {
     "  truefact view   <run.jsonl>\n" +
     "  truefact fleet  <run.jsonl...>\n" +
     "  truefact gate   <run.jsonl...> [--max-did-not-land 0.05]\n" +
-    "  truefact demo\n",
+    "  truefact demo\n" +
+    "  truefact watch  --port <n> [--api-origins a.com,b.com] [--body-errors] [--jsonl run.jsonl]\n",
   );
   return 2;
 }

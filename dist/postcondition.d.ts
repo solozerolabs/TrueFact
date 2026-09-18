@@ -3,7 +3,7 @@ import { type Confidence, type Fingerprint, type SessionEvidence } from "./sessi
 import type { DeclaredResult } from "./declaration.js";
 export type Verdict = "landed" | "did-not-land" | "inconclusive";
 export type { Confidence };
-export type PostReason = "field-match" | "field-mismatch" | "new-page" | "navigated" | "validation-error" | "error-text" | "prompt" | "confirmation" | "form-cleared" | "hash-only-nav" | "changed-unclassified" | "no-change" | "non-mutating" | "unsettled" | "declared-met" | "declared-unmet" | "declared-unreadable" | "network-error";
+export type PostReason = "field-match" | "field-mismatch" | "new-page" | "navigated" | "validation-error" | "error-text" | "prompt" | "confirmation" | "form-cleared" | "hash-only-nav" | "changed-unclassified" | "no-change" | "non-mutating" | "unsettled" | "declared-met" | "declared-unmet" | "declared-unreadable" | "network-error" | "network-ok";
 export interface FormValue {
     value: string;
     checked?: boolean;
