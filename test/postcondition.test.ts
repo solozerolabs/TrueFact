@@ -335,6 +335,25 @@ describe("withTrueFact: postcondition end to end", () => {
     assert.equal(s.evidence.postcondition?.reason, "confirmation");
   });
 
+  it("act() returns the verdict on the result (res.truefact) so an agent loop reads it there", async () => {
+    const p = await b.page();
+    await p.goto(fx.base + "/checkout");
+    await p.locator("[name=email]").fill("a@b.co");
+    const sh = await b.start();
+    const { act } = withTrueFact(fakeStagehand(sh, await b.page(), { selector: "#s", method: "click" }), { waitMs: WAIT, screenshots: false });
+    const res = await act("place the order");
+    assert.equal(res.truefact.verdict, "landed");
+    assert.ok(typeof res.truefact.why === "string" && res.truefact.why.length > 0, "why is a non-empty reason string");
+  });
+
+  it("replay.assertLanded() throws with the reason on a did-not-land run", async () => {
+    await go("/checkout"); // required email empty -> validation-error / did-not-land
+    const sh = await b.start();
+    const tr = withTrueFact(fakeStagehand(sh, await b.page(), { selector: "#s", method: "click" }), { waitMs: WAIT, screenshots: false });
+    await tr.act("submit");
+    assert.throws(() => tr.replay.assertLanded(), /did not land/);
+  });
+
   it("D17: a page that mutates forever but navigates on click -> landed / navigated (unsettled must not mask it)", async () => {
     await go("/ticker");
     const s = await runAct({ selector: "#go", method: "click" });

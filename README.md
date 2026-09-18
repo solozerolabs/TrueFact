@@ -26,7 +26,7 @@ TrueFact wraps your browser agent. After every action it reads the live page its
 npm install github:solozerolabs/TrueFact   # or: bun add github:solozerolabs/TrueFact
 ```
 
-Installs straight from git. The compiled `dist/` is committed, so no build step runs on your machine.
+Installs from git; a `prepare` step compiles it on install. (Runnable examples: [`examples/`](examples).)
 
 ```ts
 import { launch } from "truefact";
@@ -35,10 +35,13 @@ import { launch } from "truefact";
 const tr = await launch({ model: { modelName: "anthropic/claude-sonnet-5", apiKey } });
 
 await tr.page.goto("https://shop.example/checkout");
-await tr.act("click 'Place order'");
 
-console.log(tr.replay.verdict);   // "did-not-land", even though the page showed success
-console.log(tr.replay.steps);     // per-step: verdict, why, evidence, what the agent claimed
+// act() returns Stagehand's result with TrueFact's independent verdict attached.
+const res = await tr.act("click 'Place order'");
+console.log(res.truefact.verdict, "—", res.truefact.why);
+// "did-not-land — a request behind this write returned 500", even though the page showed success
+
+console.log(tr.replay.verdict);   // the run roll-up over every write
 await tr.close();
 ```
 

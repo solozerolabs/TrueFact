@@ -105,7 +105,36 @@ export interface Replay {
   setClaim(done: boolean, note?: string): void;
   final: RunDeclaration | null;
   finalize(opts?: { expect?: Declaration | Declaration[] }): Promise<RunDeclaration>;
+  /** Throw with the reason unless the whole run landed. Handy in a test/gate. */
+  assertLanded(): void;
 }
+
+/** The verdict, attached to what `act()` returns, so an agent loop reads it off
+ *  the result instead of digging into replay.steps. `why` is a one-line reason. */
+export interface VerdictView {
+  verdict: Verdict;
+  reason: string;
+  confidence: string;
+  why: string;
+  step: Step;
+}
+
+/** A one-line, human/agent-readable reason for a write step's verdict. */
+export function whyOf(step: Step): string {
+  const p = step.evidence.postcondition;
+  const net = p?.network?.errors?.[0];
+  if (net) return `a request behind this write ${net.status == null ? "failed with no response" : "returned " + net.status} (${step.verdict})`;
+  if (step.evidence.session.obstruction) return `blocked by ${step.evidence.session.obstruction} (${step.verdict})`;
+  return `${step.verdict}${p ? " (" + p.reason + ")" : ""}`;
+}
+
+const verdictView = (step: Step): VerdictView => ({
+  verdict: step.verdict,
+  reason: step.evidence.postcondition?.reason ?? "no-evidence",
+  confidence: step.evidence.postcondition?.confidence ?? "heuristic",
+  why: whyOf(step),
+  step,
+});
 
 export interface TrueFactOptions {
   screenshots?: boolean; // default true; captured on write steps, after the verdict is decided
@@ -147,7 +176,7 @@ export type ActOptions = StagehandClientActOptions & {
 };
 
 export interface Wrapped {
-  act(instruction: string | Action, options?: ActOptions): Promise<ActResult>;
+  act(instruction: string | Action, options?: ActOptions): Promise<ActResult & { truefact: VerdictView }>;
   extract: Stagehand["extract"];
   observe: Stagehand["observe"];
   page: { goto(url: string, opts?: unknown): Promise<unknown>; current(): Promise<PageReader> };
@@ -185,6 +214,11 @@ class ReplayImpl implements Replay {
   async finalize(opts: { expect?: Declaration | Declaration[] } = {}): Promise<RunDeclaration> {
     this.final = await this.finalizer(validateDeclarations(opts.expect));
     return this.final;
+  }
+  assertLanded(): void {
+    if (this.verdict === "landed") return;
+    const bad = this.steps.filter((s) => s.kind === "write" && s.verdict !== "landed").at(-1);
+    throw new Error(`TrueFact: run did not land (${this.verdict})${bad ? " — " + whyOf(bad) : ""}`);
   }
 }
 
@@ -498,9 +532,13 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
   }
 
   return {
-    act: (instruction, options) => {
+    act: async (instruction, options) => {
       const { expect, waitMs, ...rest } = options ?? {};
-      return run("write", `act: ${actionText(instruction)}`, () => driver.act(instruction, rest), { expect, waitMs, model: modelName(rest) }) as Promise<ActResult>;
+      const res = (await run("write", `act: ${actionText(instruction)}`, () => driver.act(instruction, rest), { expect, waitMs, model: modelName(rest) })) as ActResult;
+      // Attach the independent verdict to the result, so an agent loop reads it
+      // off `res.truefact` instead of reaching into replay.steps.
+      const step = replay.steps.at(-1)!;
+      return Object.assign(res ?? ({} as ActResult), { truefact: verdictView(step) });
     },
     extract: ((...args: unknown[]) => {
       const extractOpts = extractOptionsOf(args);
