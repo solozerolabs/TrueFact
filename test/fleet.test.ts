@@ -18,7 +18,8 @@ describe("rollupRuns (pure): the true landed rate", () => {
   it("summarizeRun rolls a run's write steps to one verdict", () => {
     assert.equal(summarizeRun(run("landed", "did-not-land")).verdict, "did-not-land");
     assert.equal(summarizeRun(run("landed", "landed")).verdict, "landed");
-    assert.equal(summarizeRun(run("landed", "inconclusive")).verdict, "inconclusive");
+    // issue #2: a landed write is not erased by a later inconclusive retry.
+    assert.equal(summarizeRun(run("landed", "inconclusive")).verdict, "landed");
   });
 
   it("counts and rates come from verdicts", () => {

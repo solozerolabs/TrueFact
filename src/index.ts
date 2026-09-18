@@ -184,12 +184,15 @@ export interface Wrapped {
   close(): Promise<void>; // release the network sidecar (no-op when network is off)
 }
 
-/** Run verdict rolls up over write steps only; a read/nav never decides it. */
+/**
+ * Run verdict rolls up over write steps only; a read/nav never decides it.
+ * The last *decisive* write (landed | did-not-land) wins: an inconclusive
+ * retry can't erase an earlier landed (issue #2 — a success drawer obstructs
+ * the re-issued action), but a later did-not-land still actively undoes it.
+ */
 export function rollup(steps: Step[]): Verdict {
-  const writes = steps.filter((s) => s.kind === "write");
-  if (writes.some((s) => s.verdict === "did-not-land")) return "did-not-land";
-  if (writes.some((s) => s.verdict === "inconclusive")) return "inconclusive";
-  return writes.length ? "landed" : "inconclusive";
+  const decisive = steps.filter((s) => s.kind === "write" && s.verdict !== "inconclusive");
+  return decisive.length ? decisive[decisive.length - 1].verdict : "inconclusive";
 }
 
 /** A run-level declaration can only demote the step roll-up. */

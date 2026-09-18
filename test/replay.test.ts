@@ -1,7 +1,7 @@
 // Pure roll-up logic (no browser) + the wrapper's nav path on a real Stagehand with no model.
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { rollup, combine, withTrueFact } from "../src/index.js";
+import { rollup, combine, withTrueFact, type StepKind, type Verdict } from "../src/index.js";
 import { step, fakeStagehand, withBrowser, serve, type Fixture } from "./helpers.js";
 
 describe("rollup (write steps only)", () => {
@@ -13,6 +13,31 @@ describe("rollup (write steps only)", () => {
   });
   it("no write steps -> inconclusive", () => {
     assert.equal(rollup([step({ kind: "nav" })]), "inconclusive");
+  });
+
+  // issue #2: a landed write must survive a later inconclusive retry (the
+  // add-to-cart success drawer obstructs the re-issued action). Verdicts are
+  // the per-step classifications from the four run records in the issue.
+  const V = (kind: StepKind, verdict: Verdict) => step({ kind, verdict });
+  const w = (v: Verdict) => V("write", v);
+  const nav = V("nav", "inconclusive");
+  it("control-single-click: nav, landed, inconclusive -> landed", () => {
+    assert.equal(rollup([nav, w("landed"), w("inconclusive")]), "landed");
+  });
+  it("deathwish-cart: landed then two inconclusive retries -> landed", () => {
+    assert.equal(rollup([nav, w("landed"), w("inconclusive"), w("inconclusive")]), "landed");
+  });
+  it("gymshark-cart: all writes inconclusive -> inconclusive", () => {
+    assert.equal(rollup([nav, w("inconclusive"), w("inconclusive"), w("inconclusive")]), "inconclusive");
+  });
+  it("allbirds-qty: all writes inconclusive -> inconclusive", () => {
+    assert.equal(rollup([nav, w("inconclusive"), w("inconclusive")]), "inconclusive");
+  });
+  it("a later did-not-land still undoes an earlier landed", () => {
+    assert.equal(rollup([w("landed"), w("did-not-land")]), "did-not-land");
+  });
+  it("a failed write retried until it lands -> landed", () => {
+    assert.equal(rollup([w("did-not-land"), w("inconclusive"), w("landed")]), "landed");
   });
 });
 
