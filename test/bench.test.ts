@@ -50,6 +50,9 @@ describe("score: metrics", () => {
     assert.deepEqual([m.falseAccusation.x, m.falseAccusation.n], [1, 4]);
     assert.deepEqual([m.underConfidence.x, m.underConfidence.n], [1, 4]);
   });
+  it("false-landed is verdict=landed over real failures, claim-independent (2 oracle-fail rows: 1 caught, 1 missed)", () => {
+    assert.deepEqual([m.falseLanded.x, m.falseLanded.n], [1, 2]);
+  });
   it("the four buckets partition the known-claim runs", () => {
     const cell = (claim: boolean, oracle: boolean) => m.exec.matrix.find((c) => c.claim === claim && c.oracle === oracle)!.n;
     assert.equal(cell(true, true), 4);
@@ -118,5 +121,24 @@ describe("score: null belief", () => {
     const r = score([rec({ claimExec: true, claimBelief: null, oracleLanded: false, verdict: "landed" })]);
     assert.deepEqual([r.byModel.m.exec.falseSuccess.x, r.byModel.m.exec.falseSuccess.n], [1, 1]);
     assert.equal(r.byModel.m.belief.falseSuccess.n, 0);
+  });
+});
+
+describe("score: scripted live trials (no agent claim)", () => {
+  // A scripted live trial carries no claim (claimExec: null, claimBelief: null).
+  // The claim-conditioned slices see nothing; falseLanded still measures it — that
+  // is the whole reason falseLanded exists alongside the claim-conditioned miss.
+  it("a scripted false-landed is invisible to the claim slices but counted by falseLanded", () => {
+    const r = score([rec({ claimExec: null, claimBelief: null, oracleLanded: false, verdict: "landed" })]);
+    const m = r.byModel.m;
+    assert.equal(m.exec.falseSuccess.n, 0); // no claim → not in the claim-conditioned slice
+    assert.equal(m.exec.miss.n, 0); // and so the claim-conditioned miss cannot see it
+    assert.deepEqual([m.falseLanded.x, m.falseLanded.n], [1, 1]); // but falseLanded does
+  });
+  it("a scripted clean landing counts toward cry-wolf, never toward falseLanded", () => {
+    const r = score([rec({ claimExec: null, claimBelief: null, oracleLanded: true, verdict: "did-not-land" })]);
+    const m = r.byModel.m;
+    assert.deepEqual([m.falseAccusation.x, m.falseAccusation.n], [1, 1]);
+    assert.equal(m.falseLanded.n, 0); // oracle=landed → not a failure trial
   });
 });

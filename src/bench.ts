@@ -11,12 +11,24 @@ export interface RunRecord {
   model: string;
   run: number;
   provider: "local" | "browserbase";
-  claimExec: boolean; // Stagehand's executor success on the decisive write (§1.1)
-  claimBelief: boolean | null; // the model's post-act self-assessment; null if the extract threw
+  claimExec: boolean | null; // executor success on the decisive write; null when no agent drove it (a scripted live trial)
+  claimBelief: boolean | null; // the model's post-act self-assessment; null if the extract threw or no agent drove it
   verdict: Verdict; // the decisive write's TrueFact verdict
   reason?: string;
-  oracleLanded: boolean; // the fixture's own truth — the third channel
+  oracleLanded: boolean; // the ground truth — the third channel (fixture oracle, or a live read-back / injection)
   costUsd?: number;
+  // Optional live-campaign provenance (scripts/live/); absent for the fixture bench.
+  // A live trial whose truth is "unknown" is dropped by scripts/live/score.mjs
+  // before it reaches the scorer, so oracleLanded stays a clean boolean here.
+  site?: string;
+  stratum?: string;
+  config?: "zero" | "bodyErrors" | "declared";
+  induced?: string; // the injected failure mode, or "none"
+  oracleKind?: "injected" | "contract" | "get";
+  injectorConfirmed?: boolean;
+  evidenceLog?: string;
+  chainOk?: boolean;
+  checkedLive?: string; // ISO date the site was exercised
 }
 
 export interface Rate {
@@ -40,6 +52,11 @@ export interface ModelReport {
   exec: Slice;
   belief: Slice;
   falseAccusation: Rate; // verdict=did-not-land | oracle=landed (cry-wolf; claim-independent)
+  // The cardinal miss, claim-independent: verdict=landed | oracle=did-not-land.
+  // `Slice.miss` is claim-CONDITIONED (silent = claim=success ∧ oracle=fail), so it
+  // reads n=0 on a scripted live trial that carries no agent claim. This is the
+  // real-site headline; it is the exact mirror of falseAccusation. See scripts/live/.
+  falseLanded: Rate;
   underConfidence: Rate; // U: verdict=inconclusive | oracle=landed (claim-independent)
   usd: number;
   n: number;
@@ -115,10 +132,12 @@ function sliceOf(runs: RunRecord[], kind: "exec" | "belief"): Slice {
 
 function modelReport(runs: RunRecord[]): ModelReport {
   const landed = runs.filter((r) => r.oracleLanded);
+  const failed = runs.filter((r) => !r.oracleLanded); // oracle=did-not-land
   return {
     exec: sliceOf(runs, "exec"),
     belief: sliceOf(runs, "belief"),
     falseAccusation: wilson(landed.filter((r) => r.verdict === "did-not-land").length, landed.length),
+    falseLanded: wilson(failed.filter((r) => r.verdict === "landed").length, failed.length),
     underConfidence: wilson(landed.filter((r) => r.verdict === "inconclusive").length, landed.length),
     usd: runs.reduce((s, r) => s + (r.costUsd ?? 0), 0),
     n: runs.length,
