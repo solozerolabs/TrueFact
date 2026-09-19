@@ -1,6 +1,6 @@
 {
   "name": "truefact",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Runtime wrapper for browser-agent write actions: reads the live page and returns an independent landed/did-not-land/inconclusive verdict, without trusting the agent.",
   "type": "module",
   "main": "dist/index.js",
