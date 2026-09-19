@@ -1,0 +1,928 @@
+{
+  "headline": {
+    "exec": {
+      "falseSuccess": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "miss": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "caught": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "matrix": [
+        {
+          "claim": true,
+          "oracle": true,
+          "n": 0
+        },
+        {
+          "claim": true,
+          "oracle": false,
+          "n": 0
+        },
+        {
+          "claim": false,
+          "oracle": true,
+          "n": 0
+        },
+        {
+          "claim": false,
+          "oracle": false,
+          "n": 0
+        }
+      ]
+    },
+    "belief": {
+      "falseSuccess": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "miss": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "caught": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "matrix": [
+        {
+          "claim": true,
+          "oracle": true,
+          "n": 0
+        },
+        {
+          "claim": true,
+          "oracle": false,
+          "n": 0
+        },
+        {
+          "claim": false,
+          "oracle": true,
+          "n": 0
+        },
+        {
+          "claim": false,
+          "oracle": false,
+          "n": 0
+        }
+      ]
+    },
+    "falseAccusation": {
+      "x": 0,
+      "n": 2,
+      "p": 0,
+      "lo": 0,
+      "hi": 0.6576280471103807
+    },
+    "falseLanded": {
+      "x": 1,
+      "n": 5,
+      "p": 0.2,
+      "lo": 0.03622316096978745,
+      "hi": 0.6244717358814613
+    },
+    "underConfidence": {
+      "x": 1,
+      "n": 2,
+      "p": 0.5,
+      "lo": 0.09452865480086614,
+      "hi": 0.9054713451991339
+    },
+    "usd": 0,
+    "n": 7
+  },
+  "groups": {
+    "S1 · zero": {
+      "exec": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "belief": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "falseAccusation": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "falseLanded": {
+        "x": 0,
+        "n": 3,
+        "p": 0,
+        "lo": 0,
+        "hi": 0.5615060804490177
+      },
+      "underConfidence": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "usd": 0,
+      "n": 3
+    },
+    "S2 · zero": {
+      "exec": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "belief": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "falseAccusation": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "falseLanded": {
+        "x": 0,
+        "n": 1,
+        "p": 0,
+        "lo": 0,
+        "hi": 0.7934567085261071
+      },
+      "underConfidence": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "usd": 0,
+      "n": 1
+    },
+    "S3 · zero": {
+      "exec": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "belief": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "falseAccusation": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "falseLanded": {
+        "x": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.2065432914738929,
+        "hi": 1
+      },
+      "underConfidence": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "usd": 0,
+      "n": 1
+    },
+    "S3 · bodyErrors": {
+      "exec": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "belief": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "falseAccusation": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "falseLanded": {
+        "x": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.2065432914738929,
+        "hi": 1
+      },
+      "underConfidence": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "usd": 0,
+      "n": 1
+    },
+    "S4 · zero": {
+      "exec": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "belief": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "falseAccusation": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "falseLanded": {
+        "x": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.2065432914738929,
+        "hi": 1
+      },
+      "underConfidence": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "usd": 0,
+      "n": 1
+    },
+    "S5 · zero": {
+      "exec": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "belief": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "falseAccusation": {
+        "x": 0,
+        "n": 1,
+        "p": 0,
+        "lo": 0,
+        "hi": 0.7934567085261071
+      },
+      "falseLanded": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "underConfidence": {
+        "x": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.2065432914738929,
+        "hi": 1
+      },
+      "usd": 0,
+      "n": 1
+    },
+    "S6 · zero": {
+      "exec": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "belief": {
+        "falseSuccess": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "miss": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "caught": {
+          "x": 0,
+          "n": 0,
+          "p": 0,
+          "lo": 0,
+          "hi": 1
+        },
+        "matrix": [
+          {
+            "claim": true,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": true,
+            "oracle": false,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": true,
+            "n": 0
+          },
+          {
+            "claim": false,
+            "oracle": false,
+            "n": 0
+          }
+        ]
+      },
+      "falseAccusation": {
+        "x": 0,
+        "n": 1,
+        "p": 0,
+        "lo": 0,
+        "hi": 0.7934567085261071
+      },
+      "falseLanded": {
+        "x": 0,
+        "n": 0,
+        "p": 0,
+        "lo": 0,
+        "hi": 1
+      },
+      "underConfidence": {
+        "x": 0,
+        "n": 1,
+        "p": 0,
+        "lo": 0,
+        "hi": 0.7934567085261071
+      },
+      "usd": 0,
+      "n": 1
+    }
+  },
+  "dropped": 0,
+  "findings": [
+    "S3 trevorblades/bad-field [bodyErrors]: expected did-not-land, got landed (truth=false)"
+  ]
+}

@@ -108,9 +108,11 @@ mutating request returned a write-error** (5xx / 4xx-on-mutating / `loadingFaile
    framework) generically — this is the answer PLAN §7.3 anticipated.
 6. **`bodyErrors` in `watch`?** It should work where `watch` owns the `Network`
    domain on the session (it enables its own). The wrapped-mode `connectOverCDP`
-   ceiling from run #3 is now **closed** (multi-target sessionId body reads,
-   6900cca) and pinned by `test/live-harness.test.ts` + `npm run probe:inject`;
-   `watch` still needs its own hermetic proof per Chrome version.
+   body read is **partially** fixed (multi-target sessionId reads, 6900cca): it
+   demotes when the body finishes loading, but Run #5 found a **cross-origin fire-
+   and-forget** write never emits `loadingFinished`, so its body is never read (a
+   real GraphQL 200-with-errors slips through). Status-based detection is
+   unaffected. `watch` still needs its own hermetic proof per Chrome version.
 
 ## 5. What to build (v1), in order
 

@@ -194,12 +194,17 @@ CDP client can't read it. It **fails safe**: empty body → no demote → `lande
 never a cry-wolf (net was `[]`).
 
 **Conclusions:**
-1. ~~`bodyErrors` is best-effort on the Playwright path (misses the body).~~
-   **CLOSED (2026-09-18).** Multi-target sessionId-routed body reads (commit
-   6900cca) let the sidecar read a child session's response body. A real GraphQL
-   `200 {"errors":[…]}` on the `connectOverCDP` (Playwright) path now demotes to
-   `did-not-land`, proved by `npm run probe:inject` (the `realbody` row) and pinned
-   hermetically in `test/live-harness.test.ts`. The run #3 ceiling no longer holds.
+1. `bodyErrors` on the Playwright path is **partially** fixed. Multi-target
+   sessionId-routed body reads (6900cca) let the sidecar read a child session's
+   body **when the body actually finishes loading** — same-origin writes, any write
+   whose response the page consumes, and injector-fulfilled responses all demote
+   now (`npm run probe:inject` realbody row; `test/live-harness.test.ts`). BUT Run
+   #5 found the ceiling still holds for a **cross-origin fire-and-forget** write:
+   the page calls `fetch()` and never reads the response, so Chrome withholds the
+   cross-origin body and never emits `loadingFinished` — `Network.getResponseBody`
+   never runs, and a real GraphQL `200 {"errors":[…]}` reads as `landed`. Status-
+   based detection (5xx / 4xx-on-write) is unaffected: `responseReceived` always
+   fires. See Run #5.
 2. **jsonplaceholder is the honest boundary of the whole network wedge:** a clean
    2xx with a plausible body that simply doesn't persist is invisible to network
    truth. Only a post-write **read-back** (re-query the resource) can catch it —
@@ -305,3 +310,55 @@ publish (PLAN.md §8/§9).
   post-write read-back, a different mechanism. Documented, not a `watch` defect.
 - Stripe/GitHub cross-origin-iframe & credentialed rows still need v2 multi-target
   (HANDOFF #2) before they can be scored; out of scope for the gate.
+
+## Run #5 — the tracked `scripts/live/` campaign, first execution, 2026-09-19
+
+First run of the consolidated harness (`npm run live && npm run live:score`),
+scripted + keyless, sidecar on, one hash-chained `--jsonl` per trial (all
+`chainOk:true`). Artifacts: `live/out/report.md` · `report.json` · `manifest.jsonl`.
+9 trials, 0 dropped-unknown.
+
+| stratum | trial | config | verdict | truth | result |
+|---|---|---|---|---|---|
+| S1 | the-internet /status/500 | zero | did-not-land | false | ✓ |
+| S1 | httpbin /status/402 | zero | did-not-land | false | ✓ (the 4xx-on-write the old sidecar MISSED, caught live) |
+| S1 | httpbin /post + inject 500 | zero | did-not-land | false | ✓ |
+| S2 | httpbin /post + inject wire | zero | did-not-land | false | ✓ |
+| S3 | trevorblades bad-field | zero | landed | false | expected miss (bodyErrors off) |
+| S3 | trevorblades bad-field | bodyErrors | **landed** | false | **FINDING — bodyErrors did NOT catch it** |
+| S4 | jsonplaceholder /posts | zero | landed | false | expected ceiling (fake-persist, network-invisible) |
+| S5 | todomvc add | zero | inconclusive | true | ✓ (client-only; never a false did-not-land) |
+| S6 | httpbin /post clean | zero | landed | true | ✓ (no cry-wolf) |
+
+**Headline (S1/S2/S6 + the S3-bodyErrors we claimed to catch): false-landed 1/5,
+cry-wolf 0/2.** The single miss is the S3 finding below; every real server
+rejection (5xx, live 4xx-on-write, injected 5xx, wire drop) was caught, and the
+client-only app was correctly `inconclusive`, not a false halt.
+
+### The finding: cross-origin fire-and-forget defeats the body read
+
+`countries.trevorblades.com` returns `200 {"errors":[{"code":"GRAPHQL_VALIDATION_FAILED"}]}`
+for a bad field (CORS is allowed; the write is genuinely rejected server-side).
+With `bodyErrors:true` it should demote — it did not. Root cause (raw-CDP debug):
+the shim fires `fetch()` and never reads the response, and the endpoint is
+cross-origin, so **Chrome withholds the cross-origin body from the renderer and
+never emits `Network.loadingFinished`** for that POST. `netwatch` reads the body
+in the `loadingFinished` handler, so the read never runs → no demote. Consuming
+the body (or a same-origin write, or an injector-fulfilled response) makes
+`loadingFinished` fire and the demote works — which is why the probe and the
+hermetic test pass. So the run #3 "ceiling" is only partially closed (see run #3,
+conclusion 1, corrected).
+
+**Why this matters:** the split-origin API (`app.x` → `api.x`) is the case
+`apiOrigins` exists for, and a fire-and-forget optimistic write to it is common.
+Status-based detection (5xx / 4xx-on-write) is unaffected — those ride
+`responseReceived`, which always arrives — so the core verdict is intact; only the
+opt-in 200-with-body-lie detection has this gap.
+
+**Candidate fix (not yet done):** on `settle`, for a mutating 2xx that got
+`responseReceived` but no `loadingFinished`, attempt `Network.getResponseBody`
+anyway (it may already be buffered), or enable `Network.streamResourceContent` for
+watched-origin writes. Feasibility unverified — Chrome may withhold the body
+regardless (ORB); probe before building. Until then the body-lie on a cross-origin
+fire-and-forget write is a documented miss, and the honest public claim stays
+status-based (S1/S2/S6): **0 false-landed across every real server-rejected write**.
