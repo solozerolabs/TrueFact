@@ -14,9 +14,13 @@ bench/showcase/*
 !bench/showcase/showcase.md
 demo-run.jsonl
 
-# local experiment scratch
-_run-*.mjs
-saucedemo-*.jsonl
+# live real-site campaign — per-trial logs stay local; the report is tracked
+# (a public claim must cite a reproducible artifact). Mirrors bench/out.
+live/out/*
+!live/out/.gitkeep
+!live/out/report.md
+!live/out/report.json
+!live/out/manifest.jsonl
 
 # build output — npm ships it via "files"+prepublishOnly; git installs build it via "prepare"
 dist/
