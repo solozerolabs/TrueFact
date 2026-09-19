@@ -107,9 +107,10 @@ mutating request returned a write-error** (5xx / 4xx-on-mutating / `loadingFaile
 5. **A Browser-Use driver?** Still no. `watch` covers Browser-Use (and every
    framework) generically — this is the answer PLAN §7.3 anticipated.
 6. **`bodyErrors` in `watch`?** It should work where `watch` owns the `Network`
-   domain on the session (it enables its own), unlike the run #3 `connectOverCDP`
-   case. Keep the documented ceiling until a hermetic test proves it per Chrome
-   version (team 1's caveat).
+   domain on the session (it enables its own). The wrapped-mode `connectOverCDP`
+   ceiling from run #3 is now **closed** (multi-target sessionId body reads,
+   6900cca) and pinned by `test/live-harness.test.ts` + `npm run probe:inject`;
+   `watch` still needs its own hermetic proof per Chrome version.
 
 ## 5. What to build (v1), in order
 

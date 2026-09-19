@@ -9,6 +9,7 @@ The module map (`src/`):
 - `netwatch.ts` — the one network reader (`trackWrites`): one outcome per mutating request, shared by both consumers. `sidecar.ts` — wrapped-mode policy over it (origin filter, retry-collapse, in-flight settle). `watch.ts` — observe-mode (`truefact watch`, live per-request verdicts).
 - `cdp.ts` — raw-CDP transport: `cdpConnect` (single page target, for the reader + `watch`), `cdpConnectBrowser` (browser target + `setAutoAttach{flatten}`, for the sidecar's multi-target network), `cdpConnectFd`/`cdpConnectSocket` (the serve fd bridge).
 - `serve.ts` — `truefact serve`: the bracket as a line-protocol sidecar process. `chain.ts` — hash chain + ed25519 signing. `declaration.ts`/`grounding.ts` — declared postconditions and extract-grounding. `bench.ts` + `scripts/bench/` — the pure scorer, the one fixture source with a server oracle, the runner.
+- `scripts/live/` — the real-site false-`landed` campaign (not a library module): `inject.mjs` (manufacture a known did-not-land on its own CDP client), `oracle.mjs` (pure independent truth), `sites.mjs` (pre-registered strata), `run.mjs`/`score.mjs`. Scores with `bench.ts`'s claim-independent `falseLanded`.
 
 A local benchmark pilot validated the harness end to end (exec false-success 60%, cry-wolf 0/12); the publish gate lives in `scripts/bench/`.
 
@@ -45,14 +46,24 @@ npm run probe:act      # one real act on a blocked submit; reads ANTHROPIC_API_K
 npm run probe:omlx     # the same trap through a local oMLX model, no cloud key (docs/PROBES.md run 2)
 npm run probe:tree     # what snapshot().formattedTree contains — the Day 5 grounding facts
 npm run probe:targets  # raw-CDP multi-target facts (popups/OOPIF) the sidecar relies on — run after a Chrome bump
+npm run probe:inject   # failure-injection facts scripts/live/ relies on — run after a Chrome/Playwright bump
 npm run bench          # Day 6: run the fixture suite × model ladder (needs .env; local oMLX rung needs none)
 npm run bench:score    # re-score bench/out/oracle.jsonl with the pure scorer (no browser, no key)
+npm run live           # real-site campaign, scripted+keyless (--agent = autonomous funnel); records, never asserts
+npm run live:score     # stratified k/N + Wilson from live/out/manifest.jsonl
 ```
 
 Day 6 benchmark rules (scripts/bench/):
 - Three channels, never crossed: `agent_claim` and `verdict` in the replay, the fixture server's own state as the oracle. **The wrapped page never receives the `/truth` URL** — the runner reads it out of band; a fixture without a server-side oracle is not a benchmark fixture.
 - Two claims, two rows: `claimExec` (Stagehand's mechanical `success`) and `claimBelief` (the model's post-act self-assessment via a fixed `extract` question, registered pre-run). The scorer (`src/bench.ts`) is pure and is the only place the three channels meet.
 - Gates read point estimates over count floors, never interval bounds (a zero-event 95% upper bound is 3.7% at n=100 — unreachable at MVP scale). `scripts/bench/fixtures.mjs` is the one fixture source; the overlay probes import it.
+
+Live measurement rules (scripts/live/):
+- The oracle is independent truth and is **never passed as `expect`** — feeding the verdict it grades would be circular. It reads out of band, like the bench's `/truth`.
+- The injector runs on **its own `cdpConnect` client**, never the sidecar's conn and never via `page.route` (CDP `Fetch` is single-owner per session; `netwatch` has no `requestPaused` handler, so sharing would hang the page). One tab per trial browser.
+- An injected trial's truth is did-not-land **by construction** (the write never leaves the browser); a trial is valid only if the injector confirmed it paused the write. `unknown` (unconfirmed injection, disagreeing read-back, unreachable site) is **dropped before the scorer, never coerced**.
+- The scored metric is the claim-independent `falseLanded` (mirror of `falseAccusation`); the claim-conditioned `miss` reads n=0 without an agent claim.
+- Live results **report, never gate** — the `publish` gate stays fixture-only. Claims are stratified `k/N` with a Wilson/rule-of-three bound, never a bare "0%", never pooled across the known S3/S4 ceilings.
 
 Detector functions run inside `page.evaluate`, so Stagehand serializes their source: use plain loops and inline arrows, never a `.find(namedFunction)` reference (it silently returns nothing — see the login detector).
 

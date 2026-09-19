@@ -49,11 +49,21 @@ Network says success; nothing actually landed. This is where the verdict is
 
 ## How to score
 
-1. ~18 runs across A–C, real agent, sidecar on, `--jsonl` each.
-2. For every write, write down the *actual* outcome (reload / API readback / the
-   endpoint's known contract) next to TrueFact's verdict.
-3. Confusion matrix: false-landed (the dangerous miss) and false-did-not-land
-   (cry-wolf) are the two numbers that decide launch vs redirect (§8).
+The campaign is now a tracked harness — `scripts/live/` (was four gitignored
+`_run-*.mjs` scratch scripts, superseded and removed):
+
+1. `npm run live` — scripted, keyless: drives each pre-registered trial in
+   `scripts/live/sites.mjs` (the A–C sites below plus injected did-not-lands),
+   sidecar on, one hash-chained `--jsonl` per trial. `--agent` runs the autonomous
+   funnel. Records, never asserts.
+2. Ground truth is read out of band by `scripts/live/oracle.mjs`: `injected`
+   (did-not-land by construction), `contract` (the endpoint's known outcome), or
+   `get` (re-read ×2). An `injected` trial needs no account and no read-back — the
+   write never leaves the browser (`npm run probe:inject`).
+3. `npm run live:score` — stratified `k/N` with a Wilson bound. **false-landed**
+   (the dangerous miss) and **cry-wolf** (false did-not-land) are the two numbers
+   that decide launch vs redirect (§8), reported per stratum×config and never
+   pooled across the known S3/S4 ceilings; `unknown` trials are dropped.
 
 ## What each site tells us about the roadmap
 
@@ -184,11 +194,12 @@ CDP client can't read it. It **fails safe**: empty body → no demote → `lande
 never a cry-wolf (net was `[]`).
 
 **Conclusions:**
-1. `bodyErrors` is reliable on the **Stagehand path** (fixture test passes) and
-   best-effort / fail-safe on the **Playwright path** (misses the body, never
-   false-demotes). Documented as a known ceiling in `sidecar.ts`. Closing it for
-   the Playwright path needs sessionId-routed body reads (the same multi-target
-   work as §4.3) — deferred; the failure mode is a miss, not a false verdict.
+1. ~~`bodyErrors` is best-effort on the Playwright path (misses the body).~~
+   **CLOSED (2026-09-18).** Multi-target sessionId-routed body reads (commit
+   6900cca) let the sidecar read a child session's response body. A real GraphQL
+   `200 {"errors":[…]}` on the `connectOverCDP` (Playwright) path now demotes to
+   `did-not-land`, proved by `npm run probe:inject` (the `realbody` row) and pinned
+   hermetically in `test/live-harness.test.ts`. The run #3 ceiling no longer holds.
 2. **jsonplaceholder is the honest boundary of the whole network wedge:** a clean
    2xx with a plausible body that simply doesn't persist is invisible to network
    truth. Only a post-write **read-back** (re-query the resource) can catch it —
