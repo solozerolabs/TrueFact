@@ -98,11 +98,11 @@
       "hi": 0.6576280471103807
     },
     "falseLanded": {
-      "x": 1,
+      "x": 0,
       "n": 5,
-      "p": 0.2,
-      "lo": 0.03622316096978745,
-      "hi": 0.6244717358814613
+      "p": 0,
+      "lo": 0,
+      "hi": 0.43449149475208104
     },
     "underConfidence": {
       "x": 1,
@@ -559,11 +559,11 @@
         "hi": 1
       },
       "falseLanded": {
-        "x": 1,
+        "x": 0,
         "n": 1,
-        "p": 1,
-        "lo": 0.2065432914738929,
-        "hi": 1
+        "p": 0,
+        "lo": 0,
+        "hi": 0.7934567085261071
       },
       "underConfidence": {
         "x": 0,
@@ -922,7 +922,5 @@
     }
   },
   "dropped": 0,
-  "findings": [
-    "S3 trevorblades/bad-field [bodyErrors]: expected did-not-land, got landed (truth=false)"
-  ]
+  "findings": []
 }

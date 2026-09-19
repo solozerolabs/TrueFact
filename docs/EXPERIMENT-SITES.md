@@ -194,17 +194,16 @@ CDP client can't read it. It **fails safe**: empty body → no demote → `lande
 never a cry-wolf (net was `[]`).
 
 **Conclusions:**
-1. `bodyErrors` on the Playwright path is **partially** fixed. Multi-target
-   sessionId-routed body reads (6900cca) let the sidecar read a child session's
-   body **when the body actually finishes loading** — same-origin writes, any write
-   whose response the page consumes, and injector-fulfilled responses all demote
-   now (`npm run probe:inject` realbody row; `test/live-harness.test.ts`). BUT Run
-   #5 found the ceiling still holds for a **cross-origin fire-and-forget** write:
-   the page calls `fetch()` and never reads the response, so Chrome withholds the
-   cross-origin body and never emits `loadingFinished` — `Network.getResponseBody`
-   never runs, and a real GraphQL `200 {"errors":[…]}` reads as `landed`. Status-
-   based detection (5xx / 4xx-on-write) is unaffected: `responseReceived` always
-   fires. See Run #5.
+1. `bodyErrors` on the Playwright path is **fully closed** now. First,
+   sessionId-routed body reads (6900cca) fixed the child-session case. Then Run #5
+   found a residual gap — a **cross-origin fire-and-forget** write (page `fetch()`es
+   and never reads the response) never emits `loadingFinished`, so the
+   `getResponseBody` read never ran and a real GraphQL `200 {"errors":[…]}` read as
+   `landed`. Fixed by draining the body with `Network.streamResourceContent` on
+   `responseReceived` and flushing it at `settle` (see Run #5 → Fixed). Status-based
+   detection (5xx / 4xx-on-write) was never affected. Pinned by
+   `test/netwatch-stream.test.ts`; the fail-safe holds on an older Chrome without
+   `streamResourceContent` (it degrades to the prior miss, never a false verdict).
 2. **jsonplaceholder is the honest boundary of the whole network wedge:** a clean
    2xx with a plausible body that simply doesn't persist is invisible to network
    truth. Only a post-write **read-back** (re-query the resource) can catch it —
@@ -355,10 +354,31 @@ Status-based detection (5xx / 4xx-on-write) is unaffected — those ride
 `responseReceived`, which always arrives — so the core verdict is intact; only the
 opt-in 200-with-body-lie detection has this gap.
 
-**Candidate fix (not yet done):** on `settle`, for a mutating 2xx that got
-`responseReceived` but no `loadingFinished`, attempt `Network.getResponseBody`
-anyway (it may already be buffered), or enable `Network.streamResourceContent` for
-watched-origin writes. Feasibility unverified — Chrome may withhold the body
-regardless (ORB); probe before building. Until then the body-lie on a cross-origin
-fire-and-forget write is a documented miss, and the honest public claim stays
-status-based (S1/S2/S6): **0 false-landed across every real server-rejected write**.
+### Fixed (2026-09-19)
+
+Probed three reads against the live endpoint (`strategy/probes/`): `getResponseBody`
+on `responseReceived` and again at settle both returned **empty** (the undrained
+cross-origin body is withheld), but **`Network.streamResourceContent` actively
+drains it** — it returned the `{"errors":…}` body with `loadingFinished` never
+firing, whether called at `requestWillBeSent` or `responseReceived`.
+
+Fix (`src/netwatch.ts`, add-only so the finishing path is untouched): when
+`bodyErrors` is on, a 2xx mutating write starts `streamResourceContent` at
+`responseReceived`, accumulates `bufferedData` + `Network.dataReceived` chunks, and
+`settle()` flushes any write that never emitted `loadingFinished` — matching the
+buffer against the body-error pattern. Best-effort (`try/catch`): on a Chrome
+without `streamResourceContent` the buffer stays empty and nothing is fabricated —
+it degrades to the prior miss, never a false verdict. Pinned hermetically in
+`test/netwatch-stream.test.ts` (the real trigger is HTTP/2 network timing, which a
+local instant-response server can't reproduce, so the tests encode the proven CDP
+event signature with a mock conn) and re-verified against the live trevorblades
+endpoint.
+
+**Re-run result:** headline (S1/S2/S6 + the S3-bodyErrors we claim to catch)
+**false-landed 0/5, cry-wolf 0/2**; all trials matched pre-registration. The two
+remaining stratum-level false-landeds are the expected ceilings, unchanged: S3 at
+default config (`bodyErrors` off) and S4 fake-persist (network-invisible; only a
+post-write read-back catches it). The honest public claim is now **0 false-landed
+across every real server-rejected write, and across the 200-with-errors body-lie
+with `bodyErrors` on**; the one class no network read can catch remains a clean 2xx
+that never persists (S4).

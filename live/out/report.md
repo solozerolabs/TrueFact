@@ -1,6 +1,6 @@
 # TrueFact — real-site false-`landed` campaign
 
-**Headline (S1/S2/S6/S7, shapes we claim to catch): false-landed 20.0% [3.6–62.4] (1/5) · cry-wolf ≤65.8% (rule-of-three, 0/2).**
+**Headline (S1/S2/S6/S7, shapes we claim to catch): false-landed ≤43.4% (rule-of-three, 0/5) · cry-wolf ≤65.8% (rule-of-three, 0/2).**
 Known ceilings (S3 default / S4) are reported in their own strata and excluded from the headline.
 
 Trials: 9 (scored 9, dropped-unknown 0). Never pooled; see the pre-registered strata.
@@ -18,7 +18,7 @@ Trials: 9 (scored 9, dropped-unknown 0). Never pooled; see the pre-registered st
 - cry-wolf ≤100.0% (rule-of-three, 0/0) · under-confidence 0.0% [0.0–100.0] (0/0)
 
 ## S3 · bodyErrors  (n=1, 1 site×flow)
-- **false-landed** 100.0% [20.7–100.0] (1/1)
+- **false-landed** ≤79.3% (rule-of-three, 0/1)
 - cry-wolf ≤100.0% (rule-of-three, 0/0) · under-confidence 0.0% [0.0–100.0] (0/0)
 
 ## S4 · zero  (n=1, 1 site×flow)
@@ -33,5 +33,4 @@ Trials: 9 (scored 9, dropped-unknown 0). Never pooled; see the pre-registered st
 - **false-landed** ≤100.0% (rule-of-three, 0/0)
 - cry-wolf ≤79.3% (rule-of-three, 0/1) · under-confidence 0.0% [0.0–79.3] (0/1)
 
-## ⚠ FINDINGS (contradicted pre-registration)
-- S3 trevorblades/bad-field [bodyErrors]: expected did-not-land, got landed (truth=false)
+_All scored trials matched their pre-registered expectation._

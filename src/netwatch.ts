@@ -80,15 +80,39 @@ export function trackWrites(
   // requests so a bracket can scope "still in flight" to its own writes.
   const reqOf = new Map<string, { url: string; method: string; status?: number; seq: number; sessionId?: string }>();
   const inflight = new Set<Promise<void>>();
+  // requestId → body drained via Network.streamResourceContent. A cross-origin
+  // fire-and-forget 2xx (the page fetch()es and never reads the response) emits
+  // responseReceived but NEVER loadingFinished — Chrome withholds the undrained
+  // cross-origin body, so getResponseBody returns empty. streamResourceContent
+  // actively pulls it; settle() flushes these (EXPERIMENT-SITES Run #5).
+  const streamBufs = new Map<string, string>();
   let seqNo = 0;
   const is2xx = (s: number) => s >= 200 && s < 300;
 
   const emit = (id: string, o: WriteOutcome): void => {
     reqOf.delete(id);
+    streamBufs.delete(id);
     opts.onOutcome(o);
+  };
+  // Start pulling a 2xx write's body so a body-lie is caught even if the page
+  // never consumes it (no loadingFinished). Best-effort: on an older Chrome
+  // without streamResourceContent the buffer stays empty and settle demotes nothing.
+  const startStream = (id: string, sessionId?: string): void => {
+    streamBufs.set(id, "");
+    const pr = (async () => {
+      try {
+        const r = (await conn.cmd("Network.streamResourceContent", { requestId: id }, sessionId)) as { bufferedData?: string } | undefined;
+        if (r?.bufferedData) streamBufs.set(id, (streamBufs.get(id) ?? "") + Buffer.from(r.bufferedData, "base64").toString("utf8"));
+      } catch {
+        /* streamResourceContent unavailable — leave the buffer empty, never fabricate */
+      }
+    })();
+    inflight.add(pr);
+    void pr.finally(() => inflight.delete(pr));
   };
   const readBodyThen = (id: string, rec: { url: string; method: string; status: number; sessionId?: string }): void => {
     reqOf.delete(id); // terminal — a later loadingFailed must not double-emit
+    streamBufs.delete(id); // the finished-body path (getResponseBody) supersedes the stream
     const pr = (async () => {
       let bodyError = false;
       try {
@@ -123,6 +147,15 @@ export function trackWrites(
     // Emit it now, at the same point the old sidecar did, so a late
     // loadingFinished can't leave a 500 behind an instant optimistic ✅.
     if (MUTATING.has(rec.method.toUpperCase()) && !is2xx(r.status)) emit(id, { url: rec.url, method: rec.method, status: r.status, bodyError: false });
+    // A 2xx write with body checking on: start draining the body now, so a
+    // fire-and-forget response whose loadingFinished never fires is still read.
+    else if (bodyRe && MUTATING.has(rec.method.toUpperCase()) && is2xx(r.status)) startStream(id, rec.sessionId);
+  });
+  conn.on("Network.dataReceived", (p) => {
+    const id = p.requestId as string;
+    if (!streamBufs.has(id)) return; // only while streaming (data present only then)
+    const d = p.data as string | undefined;
+    if (d) streamBufs.set(id, (streamBufs.get(id) ?? "") + Buffer.from(d, "base64").toString("utf8"));
   });
   conn.on("Network.loadingFinished", (p) => {
     const id = p.requestId as string;
@@ -148,6 +181,15 @@ export function trackWrites(
   return {
     settle: async () => {
       await Promise.allSettled([...inflight]);
+      // Flush 2xx writes that streamed a body but never emitted loadingFinished
+      // (cross-origin fire-and-forget). A finished write is already gone from reqOf
+      // (readBodyThen deleted it), so this only fires for the non-finishing case.
+      for (const [id, buf] of [...streamBufs]) {
+        const rec = reqOf.get(id);
+        if (!rec) { streamBufs.delete(id); continue; }
+        if (rec.status !== undefined && is2xx(rec.status) && MUTATING.has(rec.method.toUpperCase()))
+          emit(id, { url: rec.url, method: rec.method, status: rec.status, bodyError: bodyRe ? bodyRe.test(buf) : false });
+      }
     },
     seq: () => seqNo,
     pendingWrites: (sinceSeq, watched) => {
