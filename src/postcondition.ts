@@ -283,6 +283,12 @@ export function classify(before: PageState, after: PageState, pageSwitched: bool
     nonEmptyBefore.length > 0 &&
     nonEmptyBefore.every((k) => k in after.forms && isEmptyValue(after.forms[k]))
   ) {
+    // ponytail: a submit that FAILS and silently clears every field with no error
+    // text (caught above) and no status role would land here falsely. Narrow: the
+    // error-text/validation rows above intercept the normal failure, it's heuristic
+    // confidence, and network still demotes. Upgrade path if a real page does this:
+    // require a positive post-submit signal (URL change / new confirmation node)
+    // before treating an all-field clear as success.
     return out("landed", "form-cleared", "heuristic");
   }
   if (hashOnly && !contentChanged) return out("inconclusive", "hash-only-nav", "heuristic");

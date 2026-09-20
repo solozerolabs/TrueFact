@@ -92,6 +92,40 @@ test("regression: a finishing 2xx-with-errors is still caught via the existing p
   assert.equal(outcomes[0].bodyError, true);
 });
 
+test("2xx-with-errors whose body load is CANCELED (loadingFailed after 2xx) is still caught", async () => {
+  // A cross-origin 200 {errors:[…]} whose body load is aborted by a navigation
+  // fires loadingFailed AFTER the 2xx. The 2xx-then-cancel guard must keep the
+  // accepted status (never cry-wolf), but the errors already streamed must still
+  // demote — the emit must not discard the buffered body.
+  const outcomes: WriteOutcome[] = [];
+  const { conn, fire } = mockConn({
+    "Network.getResponseBody": () => ({ body: "" }),
+    "Network.streamResourceContent": () => ({ bufferedData: b64('{"errors":[{"message":"rejected"}]}') }),
+  });
+  const t = trackWrites(conn, { bodyErrors: true, onOutcome: (o) => outcomes.push(o) });
+  fire("Network.requestWillBeSent", post("1"), "S1");
+  fire("Network.responseReceived", { requestId: "1", response: { status: 200 } }, "S1");
+  fire("Network.loadingFailed", { requestId: "1" });
+  await t.settle();
+  assert.equal(outcomes.length, 1, "exactly one outcome, no double-emit");
+  assert.equal(outcomes[0].status, 200, "2xx-then-cancel keeps the accepted status, never null");
+  assert.equal(outcomes[0].bodyError, true, "the streamed errors body must still demote");
+});
+
+test("clean 2xx whose body load is canceled stays landed (guard preserved)", async () => {
+  const outcomes: WriteOutcome[] = [];
+  const { conn, fire } = mockConn({
+    "Network.getResponseBody": () => ({ body: "" }),
+    "Network.streamResourceContent": () => ({ bufferedData: b64('{"data":{"ok":true}}') }),
+  });
+  const t = trackWrites(conn, { bodyErrors: true, onOutcome: (o) => outcomes.push(o) });
+  fire("Network.requestWillBeSent", post("1"), "S1");
+  fire("Network.responseReceived", { requestId: "1", response: { status: 200 } }, "S1");
+  fire("Network.loadingFailed", { requestId: "1" });
+  await t.settle();
+  assert.equal(outcomes[0]?.bodyError, false, "a canceled clean body must not cry wolf");
+});
+
 test("bodyErrors off: no stream, no body read, a 2xx that never finishes just isn't an error", async () => {
   const outcomes: WriteOutcome[] = [];
   let streamed = false;

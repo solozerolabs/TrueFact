@@ -175,6 +175,11 @@ export function trackWrites(
     // /li/track (200) fired here when navigation canceled the in-flight beacon.
     // Only a wire failure with NO prior 2xx is a failed write.
     const status = rec.status ?? 0;
+    // If we're streaming this 2xx for body errors, the cancel does not discard
+    // what already buffered — defer to settle(), which awaits the stream and
+    // tests the bytes, so a 2xx {errors:[…]} whose body load is aborted is still
+    // caught rather than emitted as a clean landed.
+    if (bodyRe && is2xx(status) && streamBufs.has(id)) return;
     emit(id, { url: rec.url, method: rec.method, status: is2xx(status) ? status : null, bodyError: false });
   });
 
