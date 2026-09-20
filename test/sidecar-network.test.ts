@@ -66,6 +66,7 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     });
     thirdBase = await listen(third);
     let flaky = 0;
+    let flakyRev = 0;
     app = createServer((req, res) => {
       if (req.method === "POST" && req.url === "/submit") return res.writeHead(500).end("upstream exploded");
       if (req.method === "POST" && req.url === "/declined") return res.writeHead(402, { "content-type": "application/json" }).end('{"error":"card declined"}');
@@ -77,6 +78,12 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
       if (req.method === "POST" && req.url === "/slow-body") { res.writeHead(200, { "content-type": "application/json" }); res.write("{"); setTimeout(() => res.end("}"), 1500); return; } // 2xx headers now, body later
       if (req.method === "POST" && req.url === "/gql-err") return res.writeHead(200, { "content-type": "application/json" }).end('{"data":null,"errors":[{"message":"mutation rejected"}]}');
       if (req.method === "POST" && req.url === "/flaky") return res.writeHead(flaky++ === 0 ? 500 : 200, { "content-type": "application/json" }).end("{}");
+      // 200 first (immediate), then 500 (delayed) to one endpoint, so the failure
+      // is deterministically recorded AFTER the success — a later failure, NOT recovered.
+      if (req.method === "POST" && req.url === "/flaky-rev") {
+        if (flakyRev++ === 0) return res.writeHead(200, { "content-type": "application/json" }).end("{}");
+        return void setTimeout(() => res.writeHead(500).end("late boom"), 200);
+      }
       // 200, then the body load is canceled (navigation/beacon shape): send a
       // content-length longer than the bytes, then destroy the socket.
       if (req.method === "POST" && req.url === "/truncate") { res.writeHead(200, { "content-type": "application/json", "content-length": "100" }); res.write("{}"); setTimeout(() => res.socket?.destroy(), 120); return; }
@@ -96,6 +103,10 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
       if (req.url === "/retry-checkout") return res.writeHead(200, { "content-type": "text/html" }).end(
         `<!doctype html><meta charset=utf8><title>Checkout</title><h1>Checkout</h1><button id=place>Place order</button><p id=ok></p>
          <script>document.getElementById('place').onclick=async()=>{try{await fetch('/flaky',{method:'POST'})}catch(e){}try{await fetch('/flaky',{method:'POST'})}catch(e){}document.getElementById('ok').textContent='✅ Order placed';};</script>`);
+      // clicks POST /flaky-rev twice: 200 then 500 (an earlier success must NOT recover a later failure).
+      if (req.url === "/order-checkout") return res.writeHead(200, { "content-type": "text/html" }).end(
+        `<!doctype html><meta charset=utf8><title>Checkout</title><h1>Checkout</h1><button id=place>Place order</button><p id=ok></p>
+         <script>document.getElementById('place').onclick=async()=>{try{await fetch('/flaky-rev',{method:'POST'})}catch(e){}try{await fetch('/flaky-rev',{method:'POST'})}catch(e){}document.getElementById('ok').textContent='✅ Order placed';};</script>`);
       // page changes in an UNCLASSIFIED way (a plain row, no confirmation) AND
       // fires a clean same-origin 2xx (a first-party analytics beacon shape).
       if (req.url === "/unclassified-write") return res.writeHead(200, { "content-type": "text/html" }).end(
@@ -113,7 +124,7 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     await shut(third);
   });
 
-  const run = async (route: "optimistic" | "declined-checkout" | "clean" | "thirdparty" | "gql" | "truncate-checkout" | "retry-checkout", apiOrigins?: string[], bodyErrors?: boolean) => {
+  const run = async (route: "optimistic" | "declined-checkout" | "clean" | "thirdparty" | "gql" | "truncate-checkout" | "retry-checkout" | "order-checkout", apiOrigins?: string[], bodyErrors?: boolean) => {
     const page = (await sh.browser.context.activePage())!;
     const fake = fakeStagehand(sh, page, { actions: [{ selector: "#place" }] });
     const w = withTrueFact(fake, { network: { port: PORT, apiOrigins, bodyErrors }, screenshots: false, waitMs: 600 });
@@ -198,6 +209,16 @@ describe("network sidecar: optimistic UI caught out-of-band", () => {
     const step = await run("retry-checkout");
     assert.equal(step.verdict, "landed");
     assert.equal(step.evidence.postcondition?.network, undefined);
+  });
+
+  it("no false-landed: 200 THEN 500 to one endpoint does NOT collapse — a later failure demotes", async () => {
+    // The mirror of retry-collapse. An EARLIER success (autosave/idempotent retry)
+    // must not absolve a LATER 500 to the same endpoint (the real write failed).
+    // Order-insensitive recovery would drop the 500 and cry landed — the cardinal-rule bug.
+    const step = await run("order-checkout");
+    assert.equal(step.verdict, "did-not-land");
+    assert.equal(step.evidence.postcondition?.reason, "network-error");
+    assert.equal(step.evidence.postcondition?.network?.errors[0]?.status, 500);
   });
 
   it("no false-landed: an unclassified page change + a clean same-origin 2xx stays inconclusive (the network never lifts)", async () => {

@@ -95,9 +95,13 @@ export async function attachSidecarConn(conn: CdpConn, opts: SidecarOptions & { 
       // Retry-collapse: a later success to the same (method,url) in this window
       // means the write landed (401 -> token refresh -> retry, transient 5xx ->
       // retry). Drop the earlier error so a recovered write never cries wolf.
-      const recovered = new Set(since.filter((o) => !isError(o)).map(key));
+      // Order matters: only a success arriving AFTER the error recovers it. An
+      // earlier success (an autosave, an idempotent pre-check) must NOT absolve a
+      // later 500 — that later failure is the real write not landing.
+      // ponytail: O(n^2) later-scan; n = writes in one act bracket, always tiny.
       return since
-        .filter((o) => isError(o) && !recovered.has(key(o)))
+        .filter((o, i) =>
+          isError(o) && !since.slice(i + 1).some((n) => !isError(n) && key(n) === key(o)))
         .map((o) => ({ url: o.url, status: o.status }));
     },
     close: () => {
