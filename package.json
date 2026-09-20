@@ -34,6 +34,7 @@
     "probe:tree": "node scripts/probe-tree.mjs",
     "probe:targets": "node scripts/probe-multitarget.mjs",
     "probe:inject": "node scripts/probe-inject.mjs",
+    "benchmark": "node scripts/bench/score.mjs",
     "bench": "node --env-file-if-exists=.env scripts/bench/run.mjs",
     "bench:score": "node scripts/bench/score.mjs",
     "bench:showcase": "node --env-file-if-exists=.env scripts/bench/showcase.mjs",

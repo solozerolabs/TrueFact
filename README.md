@@ -4,15 +4,15 @@
 
 <img src="demo/truefact-demo.gif" alt="TrueFact catching an optimistic-UI failure: the agent reported success, the server returned 500, truefact assert exits 1">
 
-On a 520-write trap benchmark, four models from weak to strong, the Stagehand framework reported the click as *done* on every write — including the 46% that never landed. The models' own confidence was better but still wrong 14–25% of the time (haiku 25%, the rest 14%). TrueFact caught every failed write (0 of 60 missed on each rung) and never once halted a good run (0 of 279).
+On a 520-write benchmark across four models weak to strong, TrueFact **caught every failed write** (0 of 50 silent failures missed) and **never once halted a good run** (0 of 279 false halts). It needs to, because the agent can't be trusted to notice: even the model's *own* confidence in the write was wrong **14–25%** of the time (haiku 25%, the rest 14%), and the framework's mechanical "I clicked" flag was worthless — it reported *done* on 100% of writes, including every one that failed.
 
-| Failed writes left undetected            |        |
-|------------------------------------------|--------|
-| Framework's mechanical claim ("I clicked")| 46%    |
+| Failed writes left undetected             |        |
+|-------------------------------------------|--------|
 | The model's own belief                    | 14–25% |
+| Framework's mechanical claim ("I clicked")| 100%   |
 | With TrueFact                             | 0%     |
 
-The safety has a price, stated up front: TrueFact returns **inconclusive** on ~14% of *good* writes rather than guess (see [What "inconclusive" means](#what-inconclusive-means)). The verdict is a deterministic read of the page and the network, not a model grading a model — no second LLM, no extra tokens, no added cost. This is a trap ladder we wrote; treat 46% as "the framework's success flag is not evidence," not a law about models. Full method and confidence bounds: [bench/out/report.md](bench/out/report.md).
+The safety has a price, stated up front: TrueFact returns **inconclusive** on ~14% of *good* writes rather than guess (see [What "inconclusive" means](#what-inconclusive-means)). The verdict is a deterministic read of the page and the network, not a model grading a model — no second LLM, no extra tokens, no added cost. The benchmark is a deliberately adversarial trap ladder we wrote, so read the 14–25% as "the agent's own success signal is not evidence," not a natural failure rate. Every number is `x/n` with a 95% bound and **reproducible from the committed run with `npm run benchmark`** (no API key, no browser). Full method: [bench/out/report.md](bench/out/report.md).
 
 TrueFact wraps your browser agent. After every action it reads the live page itself, and the network under it. Then it returns an independent verdict: **landed / did-not-land / inconclusive**. It never trusts what the agent claims. The gap between "agent said done" and "the world says done" is the whole product.
 
