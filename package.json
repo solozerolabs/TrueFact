@@ -1,6 +1,6 @@
 {
   "name": "truefact",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Independent landed/did-not-land/inconclusive verdicts for agent writes: reads the live page, the network, or the record the agent wrote, without trusting the agent.",
   "type": "module",
   "main": "dist/index.js",
