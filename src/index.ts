@@ -37,6 +37,7 @@ import {
 } from "./declaration.js";
 import { groundValues, type Grounding, type GroundingReason } from "./grounding.js";
 import { redactText } from "./redact.js";
+import { readBack, safeReadBack, serializeExpect, validateExpect, type Expect, type ReadFn, type RecordEvidence } from "./record.js";
 
 export type { Verdict, Postcondition, SessionEvidence, Fingerprint, Declaration, DeclaredResult, Grounding, GroundingReason };
 export { sessionVerdict, applyDeclarations, validateDeclarations, groundValues };
@@ -62,12 +63,14 @@ export { playwrightDriver, playwrightReader, axToLines } from "./driver-playwrig
 export { cdpDriver, cdpReader, type CdpAction, type Perform } from "./driver-cdp.js";
 export { startServe, type ServeOptions, type ServeRequest, type ServeReply, type ServeSession } from "./serve.js";
 export { summarizeRun, rollupRuns, type RunSummary, type FleetSummary } from "./fleet.js";
+export { matchExpect, type Expect, type ReadFn, type RecordEvidence } from "./record.js";
 export type StepKind = "write" | "read" | "nav";
 
 export interface Step {
   kind: StepKind;
   action: string;
-  declaration: "auto" | Declaration[];
+  // "auto" = inferred; Declaration[] = page declarations; { expect } = a record write's declared read-back
+  declaration: "auto" | Declaration[] | { expect: unknown };
   verdict: Verdict;
   evidence: {
     before: Fingerprint | null;
@@ -78,6 +81,7 @@ export interface Step {
     grounding?: Grounding; // extract steps: did each returned value appear on the page
     nav?: { status: number | null };
     screenshot?: string;
+    record?: RecordEvidence; // a `write` step: the caller's read-back, before and after
   };
   attempt: Action[] | null; // where to look, never evidence of outcome
   agent_claim: { success: boolean; message: string } | null;
@@ -149,13 +153,18 @@ export function whyOf(step: Step): string {
   if (net) return `a request behind this write ${net.status == null ? "failed with no response" : "returned " + net.status} (${step.verdict})`;
   if (p?.network?.pending) return `a request behind this write hadn't answered when we checked (${step.verdict})`;
   if (step.evidence.session.obstruction) return `blocked by ${step.evidence.session.obstruction} (${step.verdict})`;
-  return `${step.verdict}${p ? " (" + p.reason + ")" : ""}`;
+  const r = step.evidence.record;
+  if (r?.afterError) return `the read-back failed: ${r.afterError} (${step.verdict})`;
+  if (r?.met === false) return `the read-back doesn't match expect${r.changed.length ? "" : " — nothing changed"} (${step.verdict})`;
+  if (r && step.declaration === "auto") return `${step.verdict} (${r.reason}) — declare \`expect\` to decide`;
+  const reason = p?.reason ?? r?.reason;
+  return `${step.verdict}${reason ? " (" + reason + ")" : ""}`;
 }
 
 const verdictView = (step: Step): VerdictView => ({
   verdict: step.verdict,
-  reason: step.evidence.postcondition?.reason ?? "no-evidence",
-  confidence: step.evidence.postcondition?.confidence ?? "heuristic",
+  reason: step.evidence.postcondition?.reason ?? step.evidence.record?.reason ?? "no-evidence",
+  confidence: step.evidence.postcondition?.confidence ?? step.evidence.record?.confidence ?? "heuristic",
   why: whyOf(step),
   retryable: retryableOf(step),
   step,
@@ -200,12 +209,36 @@ export type ActOptions = StagehandClientActOptions & {
   waitMs?: number;
 };
 
-export interface Wrapped {
+/** How a `write` reads back what it wrote. `read` is called with no arguments
+ *  before and after the action — it must query the system of record itself
+ *  (never return the action's result). `expect` decides the verdict. */
+export interface WriteCheck {
+  read: ReadFn;
+  expect?: Expect;
+  waitMs?: number; // read-back budget; default the run's waitMs (5000)
+}
+
+export interface Written<T> {
+  value: T;
+  truefact: VerdictView;
+}
+
+/** A recorded run without a browser: API, tool-call and MCP agents. */
+export interface Run {
+  /** Run `action`, read back what it wrote, record one write step. If `action`
+   *  throws, the step is still recorded (a timed-out call may have landed) and
+   *  the error is re-thrown with `truefact` attached. */
+  write<T>(label: string, action: () => T | Promise<T>, check: WriteCheck): Promise<Written<Awaited<T>>>;
+  replay: Replay;
+}
+
+export type RunOptions = Pick<TrueFactOptions, "jsonl" | "signingKey" | "redactFields" | "waitMs">;
+
+export interface Wrapped extends Run {
   act(instruction: string | Action, options?: ActOptions): Promise<ActResult & { truefact: VerdictView }>;
   extract: Stagehand["extract"];
   observe: Stagehand["observe"];
   page: { goto(url: string, opts?: unknown): Promise<unknown>; current(): Promise<PageReader> };
-  replay: Replay;
   close(): Promise<void>; // release the network sidecar (no-op when network is off)
 }
 
@@ -338,6 +371,25 @@ function redactStep(step: Step, redactFields?: (string | RegExp)[]): Step {
     }
   }
 
+  // A record read-back is arbitrary JSON: scrub every string, and length-mask
+  // the value under any key named in redactFields, at any depth.
+  const scrub = (v: unknown): unknown =>
+    typeof v === "string"
+      ? redactText(v)
+      : Array.isArray(v)
+        ? v.map(scrub)
+        : v && typeof v === "object"
+          ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, declared(k) ? redactLen(typeof x === "string" ? x : JSON.stringify(x) ?? "") : scrub(x)]))
+          : v;
+  const rec = step.evidence.record;
+  if (rec) {
+    rec.before = scrub(rec.before);
+    rec.after = scrub(rec.after);
+    if (rec.beforeError) rec.beforeError = redactText(rec.beforeError);
+    if (rec.afterError) rec.afterError = redactText(rec.afterError);
+  }
+  if (typeof step.declaration === "object" && !Array.isArray(step.declaration)) step.declaration = { expect: scrub(step.declaration.expect) };
+
   const post = step.evidence.postcondition;
   if (post) {
     const scrubForms = (forms: Record<string, FormValue>): void => {
@@ -364,12 +416,21 @@ function redactStep(step: Step, redactFields?: (string | RegExp)[]): Step {
   return step;
 }
 
-export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions = {}): Wrapped {
-  // Accept a Stagehand (wrap it) or a ready Driver (Phase 2 drivers pass one).
-  const driver: Driver =
-    "activePage" in source && "readerFor" in source ? (source as Driver) : stagehandDriver(source as Stagehand);
-  const screenshotDir = opts.screenshotDir ?? ".truefact/screenshots";
-  const defaultWait = opts.waitMs ?? 5000;
+// A write with no page has no session to detect: nothing ran, nothing blocked.
+const NO_PAGE: SessionEvidence = { obstruction: null, confidence: "high", detail: "no page: record read-back", checked: [] };
+
+/** The agent's claim for a plain function: it returned (and what), or it threw. */
+const claimText = (v: unknown): string =>
+  (v instanceof Error ? v.message : typeof v === "string" ? v : (JSON.stringify(v) ?? "")).slice(0, 500);
+
+/**
+ * The run's record, shared by every entry point so a mixed browser + API run is
+ * one chain: redact, chain, sign, keep in memory and (if configured) append one
+ * JSONL line — the stored record survives a crashed run and always matches
+ * what's in memory. The hash is computed AFTER redaction, so a stored line
+ * re-hashes to its own `hash` (verify reads exactly what was written).
+ */
+function recorder(opts: RunOptions, finalizer: (decls: Declaration[]) => Promise<RunDeclaration>) {
   // Truncate at the start of the run: a run owns its file and appends one line
   // per step, so a fresh chain always begins at prevHash "". Re-running the same
   // path used to concatenate runs into a chain that verify() reports as broken.
@@ -377,15 +438,11 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
     mkdirSync(dirname(opts.jsonl), { recursive: true });
     writeFileSync(opts.jsonl, "");
   }
-
-  // Redact, chain, sign, push in memory, and (if configured) append one JSONL
-  // line — so the stored record survives a crashed run and always matches
-  // what's in memory. The hash is computed AFTER redaction, so a stored line
-  // re-hashes to its own `hash` (verify reads exactly what was written).
   const signingKey = opts.signingKey ?? process.env.TRUEFACT_SIGNING_KEY;
   const sign = signingKey ? makeSigner(signingKey) : null;
+  const replay = new ReplayImpl(finalizer);
   let prevHash = "";
-  const record = (step: Step): void => {
+  const record = (step: Step): Step => {
     const clean = redactStep(step, opts.redactFields);
     clean.prevHash = prevHash;
     clean.hash = hashStep(clean);
@@ -393,7 +450,75 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
     prevHash = clean.hash;
     replay.steps.push(clean);
     if (opts.jsonl) appendFileSync(opts.jsonl, JSON.stringify(clean) + "\n");
+    return clean;
   };
+
+  // The record write: read before, run, read back, decide. The action's return
+  // value is sealed as agent_claim and never reaches readBack (invariant 1).
+  const write: Run["write"] = async (label, action, check) => {
+    if (typeof check?.read !== "function") throw new Error("TrueFact: write needs check.read — a function that queries the system of record");
+    validateExpect(check.expect); // fail fast, before the write
+    const before = await safeReadBack(check.read);
+    let value: unknown;
+    let threw: unknown = null;
+    try {
+      value = await action();
+    } catch (e) {
+      threw = e ?? new Error("action threw");
+    }
+    const back = await readBack(check.read, before, check.expect, check.waitMs ?? opts.waitMs ?? 5000);
+    const step = record({
+      kind: "write",
+      action: label,
+      declaration: check.expect === undefined ? "auto" : { expect: serializeExpect(check.expect) },
+      verdict: back.verdict,
+      evidence: { before: null, after: null, settled: back.settled, session: NO_PAGE, record: back.evidence },
+      attempt: null,
+      agent_claim: { success: !threw, message: claimText(threw ?? value) },
+      cost: null,
+      timestamp: new Date().toISOString(),
+    });
+    const truefact = verdictView(step);
+    if (threw) {
+      if (typeof threw === "object") Object.assign(threw, { truefact });
+      throw threw;
+    }
+    return { value: value as Awaited<ReturnType<typeof action>>, truefact };
+  };
+
+  return { replay, record, write };
+}
+
+/**
+ * A recorded run for agents with no browser — API calls, tool calls, MCP
+ * writes. Each `write` reads the system of record before and after and decides
+ * the verdict from that read, never from what the action returned.
+ */
+export function openRun(opts: RunOptions = {}): Run {
+  const { replay, write } = recorder(opts, async (decls) => {
+    if (decls.length) throw new Error("TrueFact: page declarations need a page (withTrueFact); declare `expect` on each write instead");
+    return { declared: [], verdict: "landed" };
+  });
+  return { write, replay };
+}
+
+export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions = {}): Wrapped {
+  // Accept a Stagehand (wrap it) or a ready Driver (Phase 2 drivers pass one).
+  const driver: Driver =
+    "activePage" in source && "readerFor" in source ? (source as Driver) : stagehandDriver(source as Stagehand);
+  const screenshotDir = opts.screenshotDir ?? ".truefact/screenshots";
+  const defaultWait = opts.waitMs ?? 5000;
+  const { replay, record, write } = recorder(opts, async (decls) => {
+    const page = await activePage();
+    await settle(page);
+    const declared = decls.length ? await checkDeclarations(page, decls, defaultWait) : [];
+    const verdict: Verdict = declared.some((r) => r.met === null)
+      ? "inconclusive"
+      : declared.some((r) => r.met === false)
+        ? "did-not-land"
+        : "landed";
+    return { declared, verdict };
+  });
 
   const activePage = (): Promise<PageReader> => driver.activePage();
 
@@ -408,18 +533,6 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
           ? attachSidecar(opts.network.port, { bodyErrors: opts.network.bodyErrors })
           : Promise.resolve(null)
       : Promise.resolve(null));
-
-  const replay = new ReplayImpl(async (decls) => {
-    const page = await activePage();
-    await settle(page);
-    const declared = decls.length ? await checkDeclarations(page, decls, defaultWait) : [];
-    const verdict: Verdict = declared.some((r) => r.met === null)
-      ? "inconclusive"
-      : declared.some((r) => r.met === false)
-        ? "did-not-land"
-        : "landed";
-    return { declared, verdict };
-  });
 
   async function snap(page: PageReader): Promise<string | undefined> {
     if (opts.screenshots === false) return undefined;
@@ -600,6 +713,7 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
         run("nav", `goto ${url}`, () => driver.goto(url, gotoOpts)),
       current: activePage,
     },
+    write,
     replay,
     close: async () => {
       (await sidecar())?.close();
