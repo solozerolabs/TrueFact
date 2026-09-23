@@ -216,3 +216,21 @@ describe("record: the stored run", () => {
     assert.equal(tf.replay.verdict, "landed");
   });
 });
+
+describe("record: offline re-assert", () => {
+  it("given a stored record run, when a record assertion runs, then it sees read-back values and never the claim", async () => {
+    const { reassert } = await import("../src/index.js");
+    const db = store();
+    const run = openRun({ waitMs: 0 });
+    await run.write("move deal", () => (db.set(123, "Closed Won"), "SECRET-CLAIM"), { read: () => db.get(123), expect: { stage: "Closed Won" } });
+    const seen: unknown[] = [];
+    const report = reassert(run.replay.steps, {
+      record: (v) => {
+        seen.push(v);
+        return (v.after as { stage: string }).stage === "Closed Won" ? { ok: true } : { ok: false, message: "stage" };
+      },
+    });
+    assert.deepEqual(report, { total: 1, failed: 0, items: [{ index: 0, action: "move deal", ok: true, message: undefined }] });
+    assert.doesNotMatch(JSON.stringify(seen), /SECRET-CLAIM/);
+  });
+});
