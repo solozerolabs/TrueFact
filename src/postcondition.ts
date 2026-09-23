@@ -35,6 +35,7 @@ export type PostReason =
   | "declared-met"
   | "declared-unmet"
   | "declared-unreadable"
+  | "read-failed" // record read-back: the caller's `read` threw, no expect to decide
   | "network-error"
   | "network-ok"; // observe mode: a watched-origin write request the server accepted
 
