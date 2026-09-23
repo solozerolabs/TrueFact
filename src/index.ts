@@ -50,6 +50,8 @@ export {
   fail,
   type BrowserView,
   type BrowserAssertion,
+  type RecordView,
+  type RecordAssertion,
   type Assertions,
   type AssertResult,
   type ReassertReport,

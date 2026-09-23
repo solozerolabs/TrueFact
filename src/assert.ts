@@ -31,9 +31,21 @@ export interface AssertResult {
 export const pass = (): AssertResult => ({ ok: true });
 export const fail = (message: string): AssertResult => ({ ok: false, message });
 
+/** What an assertion sees for one record write (`run.write`). The read-back
+ *  values only — never the action's return value. */
+export interface RecordView {
+  action: string;
+  verdict: Verdict;
+  before: unknown; // null when unreadable or absent
+  after: unknown;
+  changed: string[];
+}
+
 export type BrowserAssertion = (v: BrowserView) => AssertResult;
+export type RecordAssertion = (v: RecordView) => AssertResult;
 export interface Assertions {
-  browser?: BrowserAssertion; // only browser today; http/mcp/cli join when their recorders land (§3)
+  browser?: BrowserAssertion;
+  record?: RecordAssertion; // http/mcp/cli join when their recorders land (§3)
 }
 
 /** Identity helper for types + a default-export a module can carry. */
@@ -43,8 +55,8 @@ export const defineAssertions = (a: Assertions): Assertions => a;
 export function toAssertions(mod: unknown): Assertions {
   const d = (mod as { default?: unknown })?.default ?? mod;
   if (typeof d === "function") return { browser: d as BrowserAssertion };
-  if (d && typeof d === "object" && "browser" in d) return d as Assertions;
-  throw new Error("TrueFact: assertion module must default-export a function or { browser } (see defineAssertions)");
+  if (d && typeof d === "object" && ("browser" in d || "record" in d)) return d as Assertions;
+  throw new Error("TrueFact: assertion module must default-export a function or { browser, record } (see defineAssertions)");
 }
 
 /** Reconstruct a write step's browser view from its recorded evidence. */
@@ -78,10 +90,12 @@ export interface ReassertReport {
 export function reassert(steps: Step[], a: Assertions): ReassertReport {
   const items: ReassertItem[] = [];
   steps.forEach((s, i) => {
-    const v = viewOf(s);
-    if (!v || !a.browser) return;
-    const r = a.browser(v);
-    items.push({ index: i, action: s.action, ok: r.ok, message: r.message });
+    const rec = s.kind === "write" ? s.evidence.record : undefined;
+    const v = rec ? null : viewOf(s);
+    const r = rec
+      ? a.record?.({ action: s.action, verdict: s.verdict, before: rec.before, after: rec.after, changed: rec.changed })
+      : v && a.browser?.(v);
+    if (r) items.push({ index: i, action: s.action, ok: r.ok, message: r.message });
   });
   return { total: items.length, failed: items.filter((x) => !x.ok).length, items };
 }

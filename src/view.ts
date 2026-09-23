@@ -66,7 +66,8 @@ function row(s,i){
 $("#list").innerHTML = steps.map(row).join("");
 
 function detail(s){
-  const p = (s.evidence&&s.evidence.postcondition)||{};
+  const rec = s.evidence&&s.evidence.record;
+  const p = (s.evidence&&s.evidence.postcondition)||rec||{};
   const after = (s.evidence&&s.evidence.after)||{};
   const net = (p.network&&p.network.errors)||[];
   const parts = [];
@@ -80,6 +81,17 @@ function detail(s){
   const added=(p.treeAdded||[]), removed=(p.treeRemoved||[]);
   if(added.length||removed.length){ parts.push('<h2>page changed</h2><div class="diff">'+
     added.map(l=>'<div class="add">'+esc(l)+'</div>').join('')+removed.map(l=>'<div class="rem">'+esc(l)+'</div>').join('')+'</div>'); }
+  if(rec){
+    const at=(v,path)=>path==="(root)"?v:path.replaceAll("[",".").replaceAll("]","").split(".").filter(Boolean).reduce((o,k)=>o==null?undefined:o[k],v);
+    const show=(v)=>v===undefined?"—":JSON.stringify(v);
+    parts.push('<h2>record read-back</h2><div class="diff">'+
+      (rec.changed.length?rec.changed.map(c=>'<div class="rem">'+esc(c)+': '+esc(show(at(rec.before,c)))+'</div><div class="add">'+esc(c)+': '+esc(show(at(rec.after,c)))+'</div>').join(''):'<div>no change</div>')+'</div>'+
+      (s.declaration&&s.declaration.expect!==undefined?(()=>{ const e=s.declaration.expect;
+        const rows=e&&typeof e==="object"&&!Array.isArray(e)?Object.keys(e).map(k=>[k,e[k],rec.after==null?undefined:rec.after[k]]):[["(record)",e,rec.after]];
+        return '<h2>expect'+(rec.met===true?' · met':rec.met===false?' · not met':'')+'</h2><div class="kv">'+rows.map(([k,want,got])=>'<div>'+esc(k)+'</div><div class="mono">expected '+esc(show(want))+' · got '+esc(show(got))+'</div>').join('')+'</div>'; })():'')+
+      (s.declaration==="auto"&&!rec.afterError?'<p class="empty">No <code>expect</code> declared, so a change alone can\\'t decide this write. Declare the fields that prove it.</p>':'')+
+      (rec.beforeError||rec.afterError?'<div class="neterr">read failed: '+esc(rec.afterError||rec.beforeError)+'</div>':''));
+  }
   if(net.length){ parts.push('<h2>network</h2>'+net.map(n=>'<div class="neterr">'+esc(n.url)+' → '+esc(n.status==null?'failed':'HTTP '+n.status)+'</div>').join('')); }
   if(p.field){ parts.push('<h2>field</h2><div class="kv"><div>'+esc(p.field.selector)+'</div><div class="mono">expected '+esc(p.field.expected)+' · got '+esc(p.field.actual)+'</div></div>'); }
   if(s.evidence&&s.evidence.screenshot){ parts.push('<h2>screenshot</h2><img class="shot" src="'+esc(s.evidence.screenshot)+'" alt="step screenshot" onerror="this.replaceWith(Object.assign(document.createElement(\\'p\\'),{className:\\'empty\\',textContent:\\'screenshot not found at \\'+this.getAttribute(\\'src\\')}))">'); }
