@@ -11,9 +11,12 @@
 // as a write error, origin filtering, retry-collapse — stays with each consumer.
 import type { CdpConn } from "./cdp.js";
 
+// Opaque origins (about:blank, data:, blob:) serialize as the string "null" — map
+// them to "" so they never become a watched origin or match each other.
 export const originOf = (u: string): string => {
   try {
-    return new URL(u).origin;
+    const o = new URL(u).origin;
+    return o === "null" ? "" : o;
   } catch {
     return "";
   }
