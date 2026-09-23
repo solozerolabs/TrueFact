@@ -16,6 +16,8 @@ The safety has a price, stated up front: TrueFact returns **inconclusive** on ~1
 
 TrueFact wraps your browser agent. After every action it reads the live page itself, and the network under it. Then it returns an independent verdict: **landed / did-not-land / inconclusive**. It never trusts what the agent claims. The gap between "agent said done" and "the world says done" is the whole product.
 
+No browser? An API, tool-call or MCP agent gets the same verdict by reading back the record it wrote. See [Agents without a browser](#agents-without-a-browser).
+
 - **Silent failures caught.** A click that lands on a cookie overlay. A form that quietly rejected. A page that shows success while the server returned 500. The agent reports all of these as done. TrueFact doesn't.
 - **Not another LLM judge.** The verdict is a deterministic read of the page and the network, not a model grading a model. Sub-second, no extra tokens.
 - **An integrity-checked record.** Every step is recorded on a hash chain, so you can replay it, assert against it offline, and detect edits. It is *tamper-evident* only when you sign it (`--pubkey`); unsigned, it catches accidental corruption and partial edits, not a full recompute by whoever holds the file.
@@ -157,9 +159,42 @@ Observe mode has no wrapped action to bracket. So it stays conservative, to prot
 truefact serve --port 9222 --jsonl run.jsonl
 ```
 
+## Agents without a browser
+
+Your agent called `updateDeal(123, { stage: "Closed Won" })` and the tool returned `ok`. That `ok` is the agent's claim. The evidence is the deal itself. Wrap the call in `write`, pass a `read` that fetches the record from the system of record, and declare the fields that prove it:
+
+```ts
+import { openRun } from "truefact";
+
+const run = openRun({ jsonl: "runs/today.jsonl" });
+
+const { value, truefact } = await run.write(
+  "move deal 123 to Closed Won",
+  () => tools.updateDeal(123, { stage: "Closed Won" }), // the agent's action
+  {
+    read: () => crm.getDeal(123),     // your own read, before and after
+    expect: { stage: "Closed Won" },  // data, matched by subset
+  },
+);
+
+truefact.verdict; // "landed" | "did-not-land" | "inconclusive"
+truefact.why;     // "the read-back doesn't match expect — nothing changed (did-not-land)"
+```
+
+- **`read`** runs before and after the action and gets no arguments, so it can't see what the action returned. Query the system of record. Don't echo the tool's result.
+- **`expect`** is a partial object (every listed key must match), a `RegExp` for strings, or `null` for "the record is gone". Values compare as JSON. `{}` is rejected: it proves nothing.
+- The read is polled for up to `waitMs` (5 s default), so an eventually-consistent store gets time to catch up. An unmet `expect` is `did-not-land` only once that budget is spent.
+- **No `expect`, no decision.** A changed record reads `inconclusive` because someone else may have written it. An unchanged record reads `inconclusive` because the write may have been a no-op. The diff is still recorded, and `why` tells you to declare `expect`.
+- A `read` that throws is `inconclusive`, never `landed`.
+- If the action throws, the step is still recorded, because a timed-out call may have committed. The error is re-thrown with `.truefact` attached.
+
+`withTrueFact` exposes the same `write`, so a browser agent that also calls an API records one chain. `truefact view`, `verify`, `fleet` and `assert` all read these steps. In `assert`, a `{ record }` slot gets the read-back (`before`, `after`, `changed`), never the action's return value.
+
+The benchmark numbers above are browser writes. A read-back verdict is exactly as good as the `read` you give it.
+
 ## What gets stored
 
-The record holds verdicts, the a11y-tree diff, form field values, URLs, and the agent's claim. It never holds cookies, request headers, or response bodies. Those aren't captured at all. Password values are masked at capture. API keys, tokens, and emails are scrubbed from every stored string before a step is written or hashed. For PII that isn't secret-shaped, like a name or an SSN, name the fields and their values are length-masked:
+The record holds verdicts, the a11y-tree diff, form field values, URLs, a `write`'s read-back values, and the agent's claim. It never holds cookies, request headers, or response bodies. Those aren't captured at all. Password values are masked at capture. API keys, tokens, and emails are scrubbed from every stored string before a step is written or hashed. For PII that isn't secret-shaped, like a name or an SSN, name the fields and their values are length-masked. The names match form fields and, in a `write`'s read-back, JSON keys at any depth:
 
 ```ts
 const tr = withTrueFact(stagehand, { redactFields: ["ssn", /card/] }); // values gone, keys kept
@@ -187,7 +222,7 @@ Most `inconclusive` verdicts disappear once you declare a postcondition on the w
 
 ## The rule
 
-TrueFact never trusts the agent. It reads the page and the network. The agent's claim is recorded on a separate channel and compared only at the end. If those channels touch during measurement, the number is worthless. So they don't.
+TrueFact never trusts the agent. It reads the page, the network, or the record the agent wrote. The agent's claim is recorded on a separate channel and compared only at the end. If those channels touch during measurement, the number is worthless. So they don't.
 
 ## What it works with
 
@@ -198,6 +233,7 @@ Two reads, two reaches. **Network truth**, the 500 behind a green checkmark, com
 | **Stagehand 4.x** | yes | yes, a11y tree | yes, Stagehand reports a self-claim to check |
 | **Playwright** | yes | yes, CDP `getFullAXTree` | n/a, a Playwright `act` is your own call, so there is no claim to contradict |
 | **Browser-Use, Puppeteer, a human** | yes, via `truefact watch` | no | no |
+| **Any agent without a browser** (API, tool calls, MCP) | n/a | n/a, read-back via `openRun().write` | yes, the tool's return value is the claim |
 
 ```ts
 import { withTrueFact, playwrightDriver } from "truefact";

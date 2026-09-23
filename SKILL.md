@@ -58,4 +58,5 @@ reply): `true` only when repeating the action can't double-apply a write — a
 double-charge a payment.
 
 Scope: TrueFact checks what a browser reaches (the running app, its pages, its
-network) — not your unit tests or build.
+network), and any record you can read back (`openRun().write(label, action,
+{ read, expect })` for API/tool-call writes) — not your unit tests or build.
