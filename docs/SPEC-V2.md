@@ -89,6 +89,10 @@ Ordering that matters for M2: `Network.enable` must run after navigation but **b
 
 Stagehand wrapper stays as the *driver adapter* (intent, timing, claim) **(exists)**; the sidecar becomes the *reader*.
 
+### 3.1b Record read-back — **SHIPPED 2026-09-22** (`src/record.ts`)
+
+The verdict for a write with no page. `openRun().write(label, action, { read, expect })` (also on `withTrueFact`) reads the system of record before and after the action; the read is the evidence, the action's return value is the sealed claim. `expect` is data (subset match, RegExp, `null` = gone). Without `expect` the step records the diff and stays `inconclusive`. This is what decides a non-browser write. The recorders below (3.2–3.4) *capture* the agent's own call. That call's response is the agent's side of the ledger, so like the network (invariant 5) it may only ever demote a read-back verdict, never lift one.
+
 ### 3.2 HTTP (agent's own calls) — cheap
 
 In-process: Node `diagnostics_channel` for undici/fetch captures request and response without wrapping user code. Python later via `httpx` event hooks. One packet per call. Verdict rule for http is trivial and deterministic: status class + optional declared body match, same `Declaration` shape as today.
