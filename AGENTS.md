@@ -3,7 +3,7 @@
 TrueFact is a TypeScript/npm wrapper around Stagehand that records what a browser agent did and computes an independent `landed / did-not-land / inconclusive` verdict per write by reading the live page. Read [SPEC.md](SPEC.md) (product), [docs/FINDINGS.md](docs/FINDINGS.md), [docs/WATCH-PLAN.md](docs/WATCH-PLAN.md) and [docs/SERVE.md](docs/SERVE.md) before changing anything.
 
 The module map (`src/`):
-- `index.ts` — `withTrueFact(source, opts)`: the bracket. Per `act`/`extract`/`observe`/`goto` it captures before-state, runs the action, reads the page, composes the verdict, redacts, hash-chains, and attaches `res.truefact`. `whyOf`, `verdictView`, `Replay`/`assertLanded` live here.
+- `index.ts` — `withTrueFact(source, opts)`: the bracket. Per `act`/`extract`/`observe`/`goto` it captures before-state, runs the action, reads the page, composes the verdict, redacts, hash-chains, and attaches `res.truefact`. `whyOf`, `verdictView`, `Replay`/`assertLanded` live here. `evidence.observer` records whether the network channel could see (`watched | blind | off`, plus `lost`); `evidence.context` records the CDP `targetId` + origin read before and after; `Step.actor` (caller-supplied, stored verbatim, never read by a verdict) and `Step.observer` (`truefact@<version>`) are stamped in `recorder()` for the bracket, `openRun` and `watch` alike.
 - `postcondition.ts` — pure verdict logic: `classify` (a11y-tree/form diff → outcome), `fieldPostcondition`, `sessionVerdict`, `applyNetwork` (network DEMOTES only), `decideWrite`.
 - `session.ts` — obstruction/`settle` (fingerprint) and evidence types. `driver.ts` + `driver-playwright.ts` + `driver-cdp.ts` — the reader/driver seam (Stagehand, Playwright, raw CDP).
 - `netwatch.ts` — the one network reader (`trackWrites`): one outcome per mutating request, shared by both consumers. `sidecar.ts` — wrapped-mode policy over it (origin filter, retry-collapse, in-flight settle). `watch.ts` — observe-mode (`truefact watch`, live per-request verdicts).
@@ -33,7 +33,7 @@ CI: install a Chrome that `localBrowser.launch` can find (`browser-actions/setup
 Day 3 facts that bite (all probed):
 - A submit blocked by native `required`/`pattern` validation changes **nothing** in the a11y tree. `:invalid` matches before and after; only `:user-invalid` (and focus jumping to the field) flips after the attempt.
 - **Test fixtures that navigate, redirect, open tabs, or need an HTTP status must be served over `http://`** (`test/helpers.ts` `serve()`, stdlib `node:http`). Chrome silently refuses script navigation to `data:` URLs, and a new tab opened to a `data:` URL reports `url() === ""` forever.
-- Detect a tab switch by the stable per-tab `pageId`, never by URL and never by object identity — `context.activePage()` returns a fresh `Page` wrapper every call. Run session detection and take the screenshot on the **final** page after the extended wait.
+- Detect a tab switch by the stable per-tab `pageId`, never by URL and never by object identity — `context.activePage()` returns a fresh `Page` wrapper every call. Run session detection and take the screenshot on the **final** page after the extended wait. A switch to a tab that existed before the action is `context-changed`, not `new-page`; never fall back to `pages()[0]`.
 - Never let a `landed` row fire without `detectSession` on the destination — a write that bounces to a login wall must not read as `navigated → landed`.
 - Compute the field-match verdict on real values, **then** redact passwords for storage; the reverse makes every password fill trivially match.
 
@@ -78,6 +78,7 @@ Detector functions run inside `page.evaluate`, so Stagehand serializes their sou
 6. **An unresolved watched write at bracket close is never `landed`.** An optimistic ✅ can lie while its POST is still in flight, so the sidecar waits (bounded) for this action's own watched-origin writes; a heuristic `landed` still unresolved at the budget demotes to `inconclusive/unsettled` — never `landed`, never `did-not-land`.
 7. **Every auto-attached CDP target is resumed.** `cdpConnectBrowser` sends `Runtime.runIfWaitingForDebugger` to every child session — an observer that attaches but doesn't resume freezes the user's popup (OAuth/3DS). Never attach without resuming.
 8. **A record `read` never sees the action's result.** It is called with no arguments, before and after; the action's return value is sealed as `agent_claim` only. Without a declared `expect`, a record write never decides (changed or unchanged ⇒ `inconclusive`): someone else may have written it, or the write was a no-op.
+9. **A blind observer never contributes to a verdict.** A reader that cannot read, or a network channel whose socket closed / whose `Network.enable` failed / that never attached, yields `inconclusive / observer-lost` for anything that depended on it. Never `landed`, never `did-not-land`. A write that ran always records a step.
 
 ## Stagehand facts that shape the code (verified against 4.1.0)
 
@@ -87,6 +88,8 @@ Detector functions run inside `page.evaluate`, so Stagehand serializes their sou
 - `waitForLoadState` resolves immediately on an already-loaded document and rejects on timeout — do not use it as a post-action settle. Use the fingerprint settle in `src/session.ts`.
 - `Stagehand.create({ browser })` works with no model; tests and scripts attach a local Chrome this way. `act`, `extract` and `observe` need a model — tests fake them via `fakeStagehand` and keep the browser real.
 
+- `context.activePage()` returns `undefined` when the active tab closed; `page.pageId` is the CDP targetId.
+
 ## CDP multi-target facts (probed, `npm run probe:targets`)
 
 - **Popups and cross-origin iframes are separate CDP targets.** A single page-target client (Stagehand's, and `cdpConnect`) is blind to their network. The sidecar uses `cdpConnectBrowser`: it binds the **browser** target (`/json/version`), not a page, and `Target.setAutoAttach{autoAttach,waitForDebuggerOnStart:false,flatten:true}` routes every child's events over one socket, tagged with `sessionId`.
@@ -94,6 +97,7 @@ Detector functions run inside `page.evaluate`, so Stagehand serializes their sou
 - **Resume every attached target** (`Runtime.runIfWaitingForDebugger`), even with `waitForDebuggerOnStart:false` — a probed fact: an auto-attached popup does not load until resumed. Enable Network *before* resuming (commands run FIFO per session) so the child can't fire its first request unseen.
 - **`Network.getResponseBody` needs the owning `sessionId`** — a child's body is unreadable from the root. `netwatch` stores each request's `sessionId` and routes the body read; requestId is globally unique across sessions in practice, so lookups stay keyed on it.
 - The reader and `watch` stay on `cdpConnect` (a page target has the Runtime/Accessibility/Page domains a browser target lacks). The `serve` fd bridge stays single-page (the Python side owns any multi-target proxying).
+- targetId never changes on navigation, even cross-site (probed); a crashed target accepts commands and never replies; one client's disconnect is invisible to every other client; a popup detaching (`Target.detachedFromTarget`) is not observer loss.
 
 ## Style
 

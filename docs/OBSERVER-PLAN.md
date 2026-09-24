@@ -43,7 +43,7 @@ No new caller options. The step gains:
 
 ```ts
 evidence.observer?: { network: "watched" | "blind" | "off"; lost?: string }
-// lost: "socket-closed" | "enable-failed" | "attach-failed" | "reader-unreadable" | "no-active-page" | "target-crashed"
+// lost: "socket-closed" | "enable-failed" | "attach-failed" | "reader-unreadable" | "no-active-page" | "target-detached" | "target-crashed"
 ```
 
 One new `PostReason`: `"observer-lost"`.
@@ -219,7 +219,7 @@ Step.observer: string;  // "truefact@<package version>", always
 
 | Phase | What | Size |
 |---|---|---|
-| 1 | A reader: `evalIn` throws, `readable`, `observer-lost`, the wrapped post-action `activePage()`, delete the `pages()[0]` fallback, invariant 8 | ~50 lines + tests A7–A9, A11 |
+| 1 | A reader: `evalIn` throws, `readable`, `observer-lost`, the wrapped post-action `activePage()`, delete the `pages()[0]` fallback, invariant 9 | ~50 lines + tests A7–A9, A11 |
 | 2 | A network: `lost()`, enable results, attach-null, short-circuit, `watch`/`serve` | ~60 lines + tests A1–A6, A10 |
 | 3 | B: target/origin capture, the before-set rule, the CDP id fix | ~40 lines + tests B1–B3 |
 | 4 | C: `actor`/`observer`, CLI flags, `watch` onto `recorder()` | ~50 lines + tests C1–C4 |
