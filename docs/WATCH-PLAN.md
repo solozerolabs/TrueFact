@@ -159,9 +159,9 @@ than a second thing to prove. KISS and DRY, and it deletes nothing that works.
 
 - **Going blind is recorded, not ignored.** When `watch` loses its CDP socket it
   prints `✗ observer lost (<reason>)`, appends one `kind: "observer"` step
-  (verdict `inconclusive`, reason `observer-lost`, `before`/`after` null), marks
-  every in-flight write `inconclusive / observer-lost`, and **exits 1** at
-  shutdown. It never keeps "watching" a dead connection and exiting 0.
+  (verdict `inconclusive`, reason `observer-lost`, `before`/`after` null), and
+  **exits 1** at shutdown. Writes in flight at that moment get no step of their
+  own: the observer step is the record that they went unseen. It never keeps "watching" a dead connection and exiting 0.
   `view`, `fleet` and `assert` already ignore non-`write` kinds.
 - **`--actor agent=x,run=y`** (keys `agent`, `version`, `model`, `run`,
   `principal`, `tenant`) is stamped verbatim on every appended step, next to

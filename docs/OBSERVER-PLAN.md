@@ -63,7 +63,7 @@ One new `PostReason`: `"observer-lost"`.
 The sidecar snapshots `lost()` at `mark()`. At settle, the network is **blind** when any of these holds:
 - `lost()` is set (socket died since mark, or before it).
 - `attachSidecar` returned `null` while `opts.network` was set (the sidecar promise resolves null today and every later step silently skips network; now every write step records `observer.network: "blind", lost: "attach-failed"`).
-- `Network.enable` for any session resolved `undefined` (`cdp.ts:85` must keep the result; `sidecar.ts:62` too), or the 2 s `firstPageEnabled` race lost.
+- `Network.enable` resolved `undefined` — per child session on the browser conn, on connect for a page/fd conn (each connector enables Network itself; `attachSidecarConn` no longer sends one, since a browser target has no Network domain and the old no-op read as a failure) — or the 2 s `firstPageEnabled` race lost.
 
 **[rev 2] Dropped from rev 1: counting orphan network events as blindness.** The sidecar attaches lazily on the first write, after the page has loaded. A response to a request that started before `Network.enable` is a normal orphan, not a dropped socket. Since nothing reconnects, an orphan can't mean anything else, so the rule would only ever fire falsely and demote healthy writes.
 
