@@ -7,11 +7,15 @@
 // retry-collapse (500-then-200 to one endpoint) nets landed, and the opt-in
 // bodyErrors catches a 200-that-lies. See src/watch.ts.
 import { createServer, type Server } from "node:http";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { localBrowser } from "@browserbasehq/stagehand";
 import { startWatch, type WatchSession, type WriteObservation } from "../src/watch.js";
 import { cdpConnect, type CdpConn } from "../src/cdp.js";
+import type { Step } from "../src/index.js";
 
 const listen = (s: Server) => new Promise<string>((r) => s.listen(0, "127.0.0.1", () => r(`http://127.0.0.1:${(s.address() as { port: number }).port}`)));
 const shut = (s: Server) => new Promise<void>((r) => { s.closeAllConnections?.(); s.close(() => r()); });
@@ -153,5 +157,94 @@ describe("truefact watch: passive network-truth verdicts", () => {
     const o = await run("gql", { bodyErrors: true });
     assert.equal(o.at(-1)?.verdict, "did-not-land");
     assert.equal(o.at(-1)?.status, 200);
+  });
+  // Plan §5 (feature C): watch records through the same recorder as the
+  // bracket, so every appended step carries the caller's actor and the
+  // observer stamp.
+  it("given startWatch({ actor: { agent: 'bu' }, jsonl }), then every appended step has actor.agent 'bu' and an observer stamp", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tf-watch-actor-"));
+    try {
+      const jsonl = join(dir, "run.jsonl");
+      watch = (await startWatch({ port: PORT, graceMs: 300, jsonl, actor: { agent: "bu" } } as Parameters<typeof startWatch>[0]))!;
+      await drv.cmd("Page.navigate", { url: `${base}/clean` });
+      await sleep(250);
+      await drv.cmd("Runtime.evaluate", { expression: "window.__go && window.__go()", awaitPromise: true });
+      await sleep(150);
+      await watch.settle();
+      await watch.close();
+      const steps = readFileSync(jsonl, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+      assert.ok(steps.length >= 1, "at least one write step was appended");
+      for (const s of steps) {
+        assert.equal(s.actor?.agent, "bu");
+        assert.match(s.observer ?? "", /^truefact@\d+\.\d+\.\d+/);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// §A10 — observer liveness in observe mode (docs/OBSERVER-PLAN.md §3 "watch").
+// `watch` binds ONE page target; when that target goes (tab closed, browser
+// gone) its socket closes and watch is blind. Today it keeps "watching" and
+// exits 0. It must say so: a `kind: "observer"` step (verdict inconclusive,
+// reason observer-lost, before/after null) appended to the jsonl chain, and
+// `session.lost()` reporting the reason. Own browser: the case kills the tab.
+describe("truefact watch: observer lost", () => {
+  const PORT = 9418;
+  let browser: Awaited<ReturnType<typeof localBrowser.launch>>;
+  let app: Server, base = "";
+
+  before(async () => {
+    app = createServer((_req, res) => res.writeHead(200, { "content-type": "text/html" }).end(page("")));
+    base = await listen(app);
+    browser = await localBrowser.launch({ headless: true, port: PORT });
+  });
+  after(async () => {
+    await browser?.close().catch(() => {}); // the tab is already gone; the browser may be too
+    await shut(app);
+  });
+
+  const jsonlSteps = (file: string): Step[] =>
+    existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Step) : [];
+  // Bounded wait for the chain to carry a line matching `pred` — file sync only; the assertions are on the step.
+  const untilStep = async (file: string, pred: (s: Step) => boolean, ms = 3000): Promise<Step | undefined> => {
+    const t = Date.now();
+    while (Date.now() - t < ms) {
+      const hit = jsonlSteps(file).find(pred);
+      if (hit) return hit;
+      await sleep(50);
+    }
+    return undefined;
+  };
+
+  it("given watch is attached to a page target, when that tab is closed, then a kind=observer step inconclusive/observer-lost is chained to the jsonl and session.lost() names the reason", async () => {
+    const jsonl = join(mkdtempSync(join(tmpdir(), "tf-watch-lost-")), "run.jsonl");
+    const drv = (await cdpConnect(PORT))!;
+    await drv.cmd("Page.navigate", { url: `${base}/x` });
+    await sleep(200);
+    const session = (await startWatch({ port: PORT, graceMs: 200, jsonl }))! as WatchSession & { lost(): string | null };
+    drv.close(); // the driver's own client must not be what keeps the tab alive
+    // Kill the page target from the outside, via the DevTools HTTP endpoint —
+    // its socket closes under watch; the browser stays up so no other client sees a "crash".
+    const targets = (await fetch(`http://127.0.0.1:${PORT}/json`).then((r) => r.json())) as { id: string; type: string }[];
+    const tab = targets.find((t) => t.type === "page")!;
+    await fetch(`http://127.0.0.1:${PORT}/json/close/${tab.id}`);
+
+    const obs = await untilStep(jsonl, (s) => (s.kind as string) === "observer");
+    assert.ok(obs, "no kind=observer step was chained to the jsonl after the target closed");
+    assert.equal(obs.verdict, "inconclusive");
+    assert.equal(obs.evidence.postcondition?.reason, "observer-lost");
+    assert.equal(obs.evidence.before, null);
+    assert.equal(obs.evidence.after, null);
+    assert.ok(obs.hash, "the observer step is part of the chain");
+    // A closed tab reaches a page-level conn as Inspector.detached first, then
+    // the socket close; either is observer loss. The session names ONE reason and
+    // the chained step carries the same one.
+    const reason = session.lost();
+    assert.ok(reason, "session.lost() must name the reason once the target is gone");
+    const recorded = (obs.evidence as Step["evidence"] & { observer?: { lost?: string } }).observer?.lost;
+    if (recorded !== undefined) assert.equal(recorded, reason);
+    await session.close();
   });
 });

@@ -37,7 +37,9 @@ export type PostReason =
   | "declared-unreadable"
   | "read-failed" // record read-back: the caller's `read` threw, no expect to decide
   | "network-error"
-  | "network-ok"; // observe mode: a watched-origin write request the server accepted
+  | "network-ok" // observe mode: a watched-origin write request the server accepted
+  | "observer-lost" // the reader or the network channel could not see (invariant 9)
+  | "context-changed"; // the active tab became one that existed before the action — nothing this action did opened it
 
 export interface FormValue {
   value: string; // passwords already stored as "<redacted:N>"
@@ -51,8 +53,13 @@ export interface PageState {
   forms: Record<string, FormValue>;
   userInvalidCount: number;
   activeField: string | null;
-  pageId: string;
+  /** False when the page could not be read at all (detached tab, dead
+   *  connection). Such a state carries no evidence and must never classify. */
+  readable: boolean;
 }
+
+/** Where the active tab ended up, relative to the one the action started on. */
+export type Tab = "same" | "new" | "existing";
 
 export interface Outcome {
   verdict: Verdict;
@@ -87,13 +94,6 @@ export function normalizeTree(formattedTree: string): string[] {
     .filter(Boolean);
 }
 
-/** The reader's normalized tree lines, or null if the snapshot threw
- *  (mid-navigation). The single place `captureState`, `checkDeclarations` and
- *  grounding read the a11y tree — now driver-agnostic via the PageReader. */
-export function readTree(page: PageReader): Promise<string[] | null> {
-  return page.snapshotTree();
-}
-
 /** The page text of one normalized tree line, without its `role:` prefix or
  *  `[selected]`/`[checked]` markers. A role-only structural line (no `: `,
  *  e.g. `status`, `scrollable, html`) has no text and returns "". */
@@ -116,8 +116,9 @@ export function multisetDiff(a: string[], b: string[]): string[] {
 }
 
 export async function captureState(page: PageReader): Promise<PageState> {
-  const fp = (await fingerprint(page)) ?? EMPTY_FP;
-  const tree = (await readTree(page)) ?? []; // mid-navigation snapshot can throw; empty tree is a safe read
+  const read = await fingerprint(page);
+  const fp = read ?? EMPTY_FP;
+  const tree = (await page.snapshotTree()) ?? []; // mid-navigation snapshot can throw; empty tree is a safe read
   const meta =
     (await safeRead(page, () => {
       const forms: Record<string, { value: string; checked?: boolean; userInvalid: boolean }> = {};
@@ -175,7 +176,7 @@ export async function captureState(page: PageReader): Promise<PageState> {
     forms: meta.forms,
     userInvalidCount: meta.userInvalidCount,
     activeField: meta.activeField,
-    pageId: page.id,
+    readable: read !== null,
   };
 }
 
@@ -208,7 +209,7 @@ function urlDelta(a: string, b: string): { changed: boolean; hashOnly: boolean }
 export function evidenceOf(
   before: PageState,
   after: PageState,
-  pageSwitched: boolean,
+  tab: Tab,
   outcome: Outcome,
 ): Postcondition {
   const added = multisetDiff(after.tree, before.tree);
@@ -217,7 +218,7 @@ export function evidenceOf(
     ...outcome,
     auto: outcome,
     urlChanged: before.fp.href !== after.fp.href,
-    pageSwitched,
+    pageSwitched: tab !== "same",
     treeAdded: added.slice(0, 40),
     treeRemoved: removed.slice(0, 40),
     formsBefore: before.forms,
@@ -227,11 +228,11 @@ export function evidenceOf(
 
 /**
  * The §4 classification rows (docs/DAY3.md, revised by DAY4 R2). Pure: a
- * function of two PageStates plus whether a tab switch happened. First match
+ * function of two PageStates plus where the active tab ended up. First match
  * wins. Bare no-change is `inconclusive`; corroboration to did-not-land
  * happens in sessionVerdict, where the obstruction is known.
  */
-export function classify(before: PageState, after: PageState, pageSwitched: boolean): Outcome {
+export function classify(before: PageState, after: PageState, tab: Tab): Outcome {
   const added = multisetDiff(after.tree, before.tree);
   const removed = multisetDiff(before.tree, after.tree);
   const { changed: urlChanged, hashOnly } = urlDelta(before.fp.href, after.fp.href);
@@ -244,7 +245,11 @@ export function classify(before: PageState, after: PageState, pageSwitched: bool
   // A confirm line only counts if it isn't negated on the same line.
   const hasConfirmText = added.some((l) => CONFIRM_RX.test(l) && !NEG_RX.test(l));
 
-  if (pageSwitched) return out("landed", "new-page", "high");
+  // A tab this action opened is a strong landed signal. A tab that already
+  // existed is not: nothing this action did put us there (a framework re-focused
+  // after the real tab closed), so the after-state is not this write's evidence.
+  if (tab === "new") return out("landed", "new-page", "high");
+  if (tab === "existing") return out("inconclusive", "context-changed", "high");
   // Navigation is a strong landed signal — unless the destination URL itself
   // announces the failure (`/checkout?error=declined`, `?status=failed`). Then
   // we can't call it landed; inconclusive, and a declaration/probe can lift it.
@@ -479,23 +484,30 @@ export async function decideWrite(
   before: PageState,
   firstAfter: PageState,
   actions: Action[] | null,
-  pageSwitched: boolean,
+  tab: Tab,
   settled: boolean,
   waitMs: number,
 ): Promise<WriteDecision> {
   const methods = (actions ?? []).map((a) => a.method).filter(Boolean) as string[];
   let after = firstAfter;
 
+  // Invariant 9: a state that could not be read is no evidence at all. Decide
+  // before any row runs — an empty read looks like a navigation to classify.
+  if (!before.readable || !after.readable) {
+    const o: Outcome = { verdict: "inconclusive", reason: "observer-lost", confidence: "high" };
+    return { kind: "write", post: evidenceOf(before, after, tab, o), after, isPassword: false };
+  }
+
   // §6 non-mutating: this was not a write.
   if (methods.length > 0 && methods.every((m) => NON_MUTATING.has(m))) {
     const o: Outcome = { verdict: "inconclusive", reason: "non-mutating", confidence: "heuristic" };
-    return { kind: "read", post: evidenceOf(before, after, pageSwitched, o), after, isPassword: false };
+    return { kind: "read", post: evidenceOf(before, after, tab, o), after, isPassword: false };
   }
 
   // §3 field writes: read each targeted field. R1: only a pure field-write
   // step short-circuits; a mixed step also classifies and takes the stricter.
   let field: FieldResult | null = null;
-  if (!pageSwitched && methods.length > 0 && FIELD_METHODS.has(methods[0])) {
+  if (tab === "same" && methods.length > 0 && FIELD_METHODS.has(methods[0])) {
     field = await fieldPostcondition(page, actions![0]);
   }
   // Only the outcome triple goes into evidence: a FieldResult carries the
@@ -503,18 +515,19 @@ export async function decideWrite(
   const triple = (o: Outcome): Outcome => ({ verdict: o.verdict, reason: o.reason, confidence: o.confidence });
   const pureFieldStep = field !== null && methods.every((m) => FIELD_METHODS.has(m));
   if (pureFieldStep) {
-    const post = evidenceOf(before, after, pageSwitched, triple(field!));
+    const post = evidenceOf(before, after, tab, triple(field!));
     post.field = field!.field;
     return { kind: "write", post, after, isPassword: field!.isPassword };
   }
 
   // §4 classification, with the §4.1 extended wait on a first-look no-change.
-  let auto = classify(before, after, pageSwitched);
+  let auto = classify(before, after, tab);
   if (auto.reason === "no-change" && waitMs > 0) {
     const resolved = await pollUntil(page, waitMs, async (changed) => {
       if (!changed) return null;
       const state = await captureState(page);
-      const c = classify(before, state, false);
+      if (!state.readable) return { state, c: { verdict: "inconclusive", reason: "observer-lost", confidence: "high" } as Outcome };
+      const c = classify(before, state, "same");
       return c.reason === "no-change" ? null : { state, c };
     });
     if (resolved) {
@@ -522,12 +535,12 @@ export async function decideWrite(
       auto = resolved.c;
     } else {
       after = await captureState(page);
-      auto = classify(before, after, false);
+      auto = after.readable ? classify(before, after, "same") : { verdict: "inconclusive", reason: "observer-lost", confidence: "high" };
     }
     if (auto.reason === "no-change" && !settled) auto = { verdict: "inconclusive", reason: "unsettled", confidence: "heuristic" };
   }
   if (field) auto = stricter(auto, triple(field)); // mixed fill+click: the field read is evidence, the stricter verdict wins
-  const post = evidenceOf(before, after, pageSwitched, auto);
+  const post = evidenceOf(before, after, tab, auto);
   if (field) post.field = field.field;
   return { kind: "write", post, after, isPassword: field?.isPassword ?? false };
 }

@@ -87,22 +87,14 @@ export function axToLines(nodes: AxNode[]): string[] {
   return out;
 }
 
-let nextId = 0;
-const pageIds = new WeakMap<object, string>();
-const idOf = (page: object): string => {
-  let id = pageIds.get(page);
-  if (!id) pageIds.set(page, (id = `pw-${nextId++}`));
-  return id;
-};
-
 // One reader per Page, reused. driver.activePage() is called several times per
 // step; a fresh reader each time would open (and leak) a new CDP session with
 // Accessibility.enable on every read.
-const readers = new WeakMap<object, PageReader>();
+const readers = new WeakMap<object, PageReader & { ready: Promise<void> }>();
 
 /** Adapt one Playwright Page to the PageReader surface. Its tree comes from
  *  CDP; every other read is Playwright-native. Memoized per page. */
-export function playwrightReader(page: PwPage): PageReader {
+export function playwrightReader(page: PwPage): PageReader & { ready: Promise<void> } {
   const cached = readers.get(page);
   if (cached) return cached;
   let cdp: Promise<PwCDPSession> | null = null;
@@ -114,8 +106,13 @@ export function playwrightReader(page: PwPage): PageReader {
         await s.send("Accessibility.enable");
         return s;
       }));
-  const reader: PageReader = {
-    id: idOf(page),
+  const reader: PageReader & { ready: Promise<void> } = {
+    id: "",
+    // The CDP targetId, like the other drivers; resolved before the first read.
+    ready: session()
+      .then((s) => s.send("Target.getTargetInfo"))
+      .then((t) => { reader.id = (t as { targetInfo?: { targetId?: string } })?.targetInfo?.targetId ?? ""; })
+      .catch(() => {}),
     async snapshotTree() {
       try {
         const res = (await (await session()).send("Accessibility.getFullAXTree")) as { nodes: AxNode[] };
@@ -184,7 +181,7 @@ export function playwrightDriver(page: PwPage): Driver {
     extract: unsupported("extract"),
     observe: unsupported("observe"),
     goto: (url, opts) => page.goto(url, opts),
-    activePage: () => Promise.resolve(playwrightReader(page)),
+    activePage: async () => { const r = playwrightReader(page); await r.ready; return r; },
     readerFor: (handle) => playwrightReader(handle as PwPage),
   };
 }

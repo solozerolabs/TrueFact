@@ -16,7 +16,7 @@
 // (write/nav), and the verdict is what the page and the network showed.
 import { cdpConnect, cdpConnectFd } from "./cdp.js";
 import { cdpDriver, type CdpAction } from "./driver-cdp.js";
-import { withTrueFact, retryableOf, type Step, type TrueFactOptions, type Wrapped } from "./index.js";
+import { withTrueFact, retryableOf, parseActor, type Step, type TrueFactOptions, type Wrapped } from "./index.js";
 import type { Declaration } from "./declaration.js";
 
 export interface ServeOptions extends Omit<TrueFactOptions, "network"> {
@@ -127,13 +127,13 @@ export async function startServe(opts: ServeOptions): Promise<ServeSession | nul
   };
 }
 
-// --- CLI glue: `truefact serve --port 9222 [--jsonl run.jsonl] [--api-origins a,b] [--body-errors] [--screenshots]`
+// --- CLI glue: `truefact serve --port 9222 [--jsonl run.jsonl] [--api-origins a,b] [--body-errors] [--screenshots] [--actor agent=x,run=y]`
 export async function runServeCli(argv: string[], io: { stdin: NodeJS.ReadableStream; stdout: NodeJS.WritableStream } = process): Promise<number> {
   const flags: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) flags[argv[i].slice(2)] = argv[i + 1]?.startsWith("--") || argv[i + 1] === undefined ? "" : argv[++i];
   const port = flags.port ? Number(flags.port) : undefined;
   const cdpFd = "cdp-fd" in flags ? Number(flags["cdp-fd"]) : undefined;
-  const usage = () => (process.stderr.write("usage: truefact serve (--cdp-fd <n≥3> | --port <n>) [--jsonl run.jsonl] [--api-origins a.com,b.com] [--body-errors] [--screenshots]\n"), 2);
+  const usage = () => (process.stderr.write("usage: truefact serve (--cdp-fd <n≥3> | --port <n>) [--jsonl run.jsonl] [--api-origins a.com,b.com] [--body-errors] [--screenshots] [--actor agent=x,run=y]\n"), 2);
   if (!port && cdpFd === undefined) return usage();
   // A bare `--cdp-fd` parses to 0 (= stdin); an fd must be an integer ≥ 3.
   if (cdpFd !== undefined && (!Number.isInteger(cdpFd) || cdpFd < 3)) return usage();
@@ -145,6 +145,7 @@ export async function runServeCli(argv: string[], io: { stdin: NodeJS.ReadableSt
     apiOrigins: flags["api-origins"] ? flags["api-origins"].split(",").map((s) => s.trim()).filter(Boolean) : undefined,
     bodyErrors: "body-errors" in flags,
     screenshots: "screenshots" in flags,
+    actor: parseActor(flags.actor),
   });
   if (!session) {
     process.stderr.write(

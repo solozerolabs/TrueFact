@@ -83,17 +83,19 @@ export function withPlaywrightBrowser() {
 }
 
 /** Build a PageState for pure unit tests. `state({ href })` is the common case. */
-export function state(over: Partial<PageState> & { href?: string } = {}): PageState {
+export function state(over: Partial<PageState> & { href?: string; readable?: boolean } = {}): PageState {
   const { href, ...rest } = over;
+  // `readable: true` by default — an unreadable state (dead reader) is the
+  // observer-lost branch and must be asked for explicitly: state({ readable: false }).
   return {
     fp: { href: href ?? "http://x/a", readyState: "complete", bodyTextLength: 0, elementCount: 0, title: "" },
     tree: [],
     forms: {},
     userInvalidCount: 0,
     activeField: null,
-    pageId: "",
+    readable: true,
     ...rest,
-  };
+  } as unknown as PageState;
 }
 
 export const form = (value: string, over: Partial<FormValue> = {}): FormValue => ({ value, userInvalid: false, ...over });

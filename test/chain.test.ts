@@ -154,3 +154,39 @@ describe("truefact verify CLI: over a jsonl on disk", () => {
     assert.match(out, /BROKEN at step #0/);
   });
 });
+
+// Plan §5 (feature C): `actor` is inside the hashed/signed step, so editing or
+// stripping it breaks the chain like any other field (C2, C3). Built through a
+// real openRun so the stamping path is the one under test, not a hand-built record.
+describe("actor identity in the chain (plan §5 C2, C3)", () => {
+  const actor = { agent: "claims-bot", run: "r-1" };
+  const recorded = async (opts: Record<string, unknown> = {}): Promise<Rec[]> => {
+    const { openRun } = await import("../src/index.js");
+    let v = 0;
+    const run = openRun({ waitMs: 0, actor, ...opts } as Parameters<typeof openRun>[0]);
+    await run.write("a", () => (v = 1), { read: () => v, expect: 1 });
+    await run.write("b", () => (v = 2), { read: () => v, expect: 2 });
+    return run.replay.steps.map((s) => JSON.parse(JSON.stringify(s)) as Rec);
+  };
+
+  it("given a recorded run with actor, when step.actor.run is edited in a copy, then verifyChain fails at that step with hash mismatch", async () => {
+    const s = await recorded();
+    assert.deepEqual(s[1].actor, actor, "precondition: the step carries the actor");
+    (s[1].actor as { run: string }).run = "r-999";
+    const r = verifyChain(s);
+    assert.equal(r.ok, false);
+    assert.equal(r.brokenAt, 1);
+    assert.match(r.reason!, /altered/);
+  });
+
+  it("given a signed run, when actor is deleted from a step, then verifyChain with the public key fails", async () => {
+    const kp = generateKeyPairSync("ed25519");
+    const priv = kp.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const pub = kp.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const s = await recorded({ signingKey: priv });
+    assert.equal(verifyChain(s, { publicKey: pub }).ok, true, "precondition: intact signed chain verifies");
+    assert.ok(s[0].actor, "precondition: the step carries the actor");
+    delete s[0].actor;
+    assert.equal(verifyChain(s, { publicKey: pub }).ok, false);
+  });
+});

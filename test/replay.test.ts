@@ -1,7 +1,7 @@
 // Pure roll-up logic (no browser) + the wrapper's nav path on a real Stagehand with no model.
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { rollup, combine, withTrueFact, type StepKind, type Verdict } from "../src/index.js";
+import { rollup, combine, withTrueFact, openRun, type Step, type StepKind, type Verdict } from "../src/index.js";
 import { step, fakeStagehand, withBrowser, serve, type Fixture } from "./helpers.js";
 
 describe("rollup (write steps only)", () => {
@@ -151,5 +151,37 @@ describe("withTrueFact: grounding on extract (Day 5)", () => {
     assert.equal(s.evidence.grounding?.values[0].match, "exact");
     assert.equal(s.evidence.grounding?.values[0].value, "[REDACTED:email]");
     assert.ok(!JSON.stringify(s).includes("ada@example.com"));
+  });
+});
+
+// Plan §5 (feature C): actor identity is caller data sealed per step, next to
+// an `observer` stamp naming the recorder. No verdict function receives it
+// (invariant 1); it is stored verbatim (a principal is a join key, never
+// redacted). Tested on openRun: withTrueFact and watch share recorder().
+describe("actor identity (plan §5 C1, C4): sealed per step, stored verbatim", () => {
+  const OBSERVER = /^truefact@\d+\.\d+\.\d+/;
+  const one = async (opts: Record<string, unknown>) => {
+    let v = 0;
+    const run = openRun({ waitMs: 0, ...opts });
+    await run.write("bump", () => (v = 1), { read: () => v, expect: 1 });
+    return run.replay.steps[0] as Step & { actor?: unknown; observer?: string };
+  };
+
+  it("given openRun({ actor }) and one write, then the step carries that actor deep-equal and an observer stamp", async () => {
+    const actor = { agent: "claims-bot", model: "m", run: "r-1", principal: "okta|u1" };
+    const s = await one({ actor });
+    assert.deepEqual(s.actor, actor);
+    assert.match(s.observer ?? "", OBSERVER);
+  });
+
+  it("given no actor, then step.actor is undefined but observer is still present", async () => {
+    const s = await one({});
+    assert.equal(s.actor, undefined);
+    assert.match(s.observer ?? "", OBSERVER);
+  });
+
+  it("given actor.principal is an email, then it is stored verbatim, not [REDACTED:email]", async () => {
+    const s = await one({ actor: { principal: "jane.doe@example.com" } });
+    assert.equal((s.actor as { principal: string }).principal, "jane.doe@example.com");
   });
 });

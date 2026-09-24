@@ -6,7 +6,6 @@ import { safeRead } from "./session.js";
 import {
   pollUntil,
   readTarget,
-  readTree,
   redactLen,
   treeText,
   type Outcome,
@@ -171,7 +170,7 @@ export async function checkDeclarations(page: PageReader, decls: Declaration[], 
     let cached: string[] | null | undefined;
     const tree = async () => {
       if (cached !== undefined) return cached;
-      cached = await readTree(page);
+      cached = await page.snapshotTree();
       return cached;
     };
     const out: DeclaredResult[] = [];

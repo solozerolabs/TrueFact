@@ -3,6 +3,7 @@
 // touch here: no verdict function receives agent_claim. See docs/DAY2–4.
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { createRequire } from "node:module";
 import type {
   ActResult,
   Action,
@@ -17,15 +18,16 @@ import {
   captureState,
   decideWrite,
   FIELD_METHODS,
-  readTree,
   redactLen,
   sessionVerdict,
   type FormValue,
   type Postcondition,
+  type Tab,
   type Verdict,
 } from "./postcondition.js";
 import { attachSidecar, attachSidecarConn, type Sidecar } from "./sidecar.js";
 import type { CdpConn } from "./cdp.js";
+import { originOf } from "./netwatch.js";
 import { hashStep, makeSigner } from "./chain.js";
 import { stagehandDriver, type Driver, type PageReader } from "./driver.js";
 import {
@@ -66,7 +68,42 @@ export { cdpDriver, cdpReader, type CdpAction, type Perform } from "./driver-cdp
 export { startServe, type ServeOptions, type ServeRequest, type ServeReply, type ServeSession } from "./serve.js";
 export { summarizeRun, rollupRuns, type RunSummary, type FleetSummary } from "./fleet.js";
 export { matchExpect, type Expect, type ReadFn, type RecordEvidence } from "./record.js";
-export type StepKind = "write" | "read" | "nav";
+// "observer": the observer itself went blind (watch mode records one when its
+// socket dies) — never a write, so it never enters the run roll-up.
+export type StepKind = "write" | "read" | "nav" | "observer";
+
+/** Who acted, as the caller states it. Opaque join keys into the caller's own
+ *  identity/audit logs (IdP, Teleport): never authenticated, never read by a
+ *  verdict, stored verbatim (an email principal must survive to join on).
+ *  Names map one-to-one to OpenTelemetry GenAI: agent→gen_ai.agent.id,
+ *  version→gen_ai.agent.version, model→gen_ai.request.model,
+ *  run→gen_ai.conversation.id, principal→user.id. */
+export interface Actor {
+  agent?: string;
+  version?: string;
+  model?: string;
+  run?: string;
+  principal?: string;
+  tenant?: string;
+}
+
+/** `--actor agent=x,run=y` → { agent: "x", run: "y" }. Unknown keys are dropped. */
+export function parseActor(spec: string | undefined): Actor | undefined {
+  if (!spec) return undefined;
+  const keys = new Set(["agent", "version", "model", "run", "principal", "tenant"]);
+  const actor: Record<string, string> = {};
+  for (const kv of spec.split(",")) {
+    const i = kv.indexOf("=");
+    const k = kv.slice(0, i).trim();
+    if (i > 0 && keys.has(k)) actor[k] = kv.slice(i + 1).trim();
+  }
+  return Object.keys(actor).length ? (actor as Actor) : undefined;
+}
+
+// The recorder's own identity: which TrueFact produced this verdict. An
+// independent recorder at a known version is what an audit sample needs
+// (the IETF agent-audit-trail draft's `recording_component`).
+export const OBSERVER = `truefact@${(createRequire(import.meta.url)("../package.json") as { version: string }).version}`;
 
 export interface Step {
   kind: StepKind;
@@ -84,7 +121,15 @@ export interface Step {
     nav?: { status: number | null };
     screenshot?: string;
     record?: RecordEvidence; // a `write` step: the caller's read-back, before and after
+    // Could the observer see? `network`: watched / blind (its socket died, its
+    // Network never enabled, it never attached) / off (not requested). A blind
+    // channel demotes an optimistic landed; it never lifts or accuses.
+    observer?: { network: "watched" | "blind" | "off"; lost?: string };
+    // Which tab (CDP targetId) and origin each side was read from.
+    context?: { before: { target: string; origin: string }; after: { target: string; origin: string } };
   };
+  actor?: Actor; // omitted when the caller gave none
+  observer: string; // OBSERVER — always stamped
   attempt: Action[] | null; // where to look, never evidence of outcome
   agent_claim: { success: boolean; message: string } | null;
   // Token/latency for this step, read off Stagehand's result metadata. `model`
@@ -204,6 +249,8 @@ export interface TrueFactOptions {
   // secret-shaped (a name, an address) and so slips past the always-on
   // secret scrubber. `["ssn", /card/]`. Off by default.
   redactFields?: (string | RegExp)[];
+  // Who is acting (see Actor). Sealed into every step's hash; never read by a verdict.
+  actor?: Actor;
 }
 
 export type ActOptions = StagehandClientActOptions & {
@@ -234,7 +281,7 @@ export interface Run {
   replay: Replay;
 }
 
-export type RunOptions = Pick<TrueFactOptions, "jsonl" | "signingKey" | "redactFields" | "waitMs">;
+export type RunOptions = Pick<TrueFactOptions, "jsonl" | "signingKey" | "redactFields" | "waitMs" | "actor">;
 
 export interface Wrapped extends Run {
   act(instruction: string | Action, options?: ActOptions): Promise<ActResult & { truefact: VerdictView }>;
@@ -327,7 +374,7 @@ const nonGrounding = (): Grounding => ({ verdict: "inconclusive", reason: "non-g
  *  be a secret the tree did not already mask. */
 async function groundExtract(active: PageReader, extractOpts: StagehandClientExtractOptions | undefined, claim: unknown, driver: Driver): Promise<Grounding> {
   const target = extractOpts?.page ? driver.readerFor(extractOpts.page) : active;
-  const tree = await readTree(target);
+  const tree = await target.snapshotTree();
   if (!tree) return nonGrounding();
   const g = groundValues((claim as { data?: unknown })?.data, tree);
   if (extractOpts?.screenshot) g.visual = true;
@@ -432,7 +479,7 @@ const claimText = (v: unknown): string =>
  * what's in memory. The hash is computed AFTER redaction, so a stored line
  * re-hashes to its own `hash` (verify reads exactly what was written).
  */
-function recorder(opts: RunOptions, finalizer: (decls: Declaration[]) => Promise<RunDeclaration>) {
+export function recorder(opts: RunOptions, finalizer: (decls: Declaration[]) => Promise<RunDeclaration>) {
   // Truncate at the start of the run: a run owns its file and appends one line
   // per step, so a fresh chain always begins at prevHash "". Re-running the same
   // path used to concatenate runs into a chain that verify() reports as broken.
@@ -444,8 +491,9 @@ function recorder(opts: RunOptions, finalizer: (decls: Declaration[]) => Promise
   const sign = signingKey ? makeSigner(signingKey) : null;
   const replay = new ReplayImpl(finalizer);
   let prevHash = "";
-  const record = (step: Step): Step => {
-    const clean = redactStep(step, opts.redactFields);
+  // `step` arrives without observer/actor: this is the one place they're stamped.
+  const record = (step: Omit<Step, "observer" | "actor">): Step => {
+    const clean = redactStep({ ...step, observer: OBSERVER, ...(opts.actor ? { actor: opts.actor } : {}) }, opts.redactFields);
     clean.prevHash = prevHash;
     clean.hash = hashStep(clean);
     if (sign) clean.sig = sign(clean.hash);
@@ -530,7 +578,7 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
   const sidecar = (): Promise<Sidecar | null> =>
     (sidecarPromise ??= opts.network
       ? opts.network.conn
-        ? attachSidecarConn(opts.network.conn, { bodyErrors: opts.network.bodyErrors, ownsConn: false })
+        ? Promise.resolve(attachSidecarConn(opts.network.conn, { bodyErrors: opts.network.bodyErrors }))
         : opts.network.port
           ? attachSidecar(opts.network.port, { bodyErrors: opts.network.bodyErrors })
           : Promise.resolve(null)
@@ -562,11 +610,18 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
     const isWrite = kind === "write";
     const beforeState = isWrite ? await captureState(beforePage) : null;
     const beforeFp = beforeState ? beforeState.fp : await fingerprint(beforePage);
+    // The tabs open before the action: a tab in this set cannot be one the action opened.
+    const tabsBefore = new Set(isWrite && driver.pageIds ? await driver.pageIds() : [beforePage.id]);
+    const ctxOf = (id: string, fp: Fingerprint | null) => ({ target: id, origin: originOf(fp?.href ?? "") });
 
     // Mark the network stream just before the write so errorsSince() sees only
     // this step's requests. Only writes are network-verified.
     const sc = isWrite ? await sidecar() : null;
     const netMark = sc ? sc.mark() : 0;
+    // What the network channel could see for this step (invariant 9): requested
+    // but never attached is blind, not clean.
+    const observerOf = (): Step["evidence"]["observer"] =>
+      !isWrite || !opts.network ? { network: "off" } : !sc ? { network: "blind", lost: "attach-failed" } : sc.lost() ? { network: "blind", lost: sc.lost()! } : { network: "watched" };
 
     let claim: unknown = null;
     let threw: unknown = null;
@@ -575,13 +630,32 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
     } catch (e) {
       threw = e;
     }
+    const cost = costOf(claim, declared.model ?? null);
 
     // Re-resolve the active page: a click can open/switch to a new tab (§5).
     // activePage() returns a fresh reader each call; compare the stable id.
-    const page = await activePage();
-    const pageSwitched = page.id !== beforePage.id;
+    // If there is no page at all any more (the tab closed under the action), the
+    // action still ran: record it as observer-lost, then rethrow — a write that
+    // ran always gets a step.
+    let page: PageReader;
+    try {
+      page = await activePage();
+    } catch (e) {
+      record({
+        kind, action, declaration: "auto", verdict: "inconclusive",
+        evidence: {
+          before: beforeFp, after: null, settled: false,
+          session: { obstruction: null, confidence: "high", detail: "no active page after the action", checked: [] },
+          ...(isWrite ? { postcondition: { verdict: "inconclusive", reason: "observer-lost", confidence: "high", auto: { verdict: "inconclusive", reason: "observer-lost", confidence: "high" }, urlChanged: false, pageSwitched: false, treeAdded: [], treeRemoved: [], formsBefore: beforeState!.forms, formsAfter: {} } } : {}),
+          observer: { network: observerOf()!.network, lost: "no-active-page" },
+          context: { before: ctxOf(beforePage.id, beforeFp), after: ctxOf("", null) },
+        },
+        attempt: null, agent_claim: null, cost, timestamp: new Date().toISOString(),
+      });
+      throw threw ?? e;
+    }
+    const tab: Tab = page.id === beforePage.id ? "same" : tabsBefore.has(page.id) ? "existing" : "new";
     const { settled } = await settle(page);
-    const cost = costOf(claim, declared.model ?? null);
 
     if (!isWrite) {
       const navStatus = kind === "nav" ? statusOf(claim) : undefined;
@@ -594,9 +668,10 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
             ? await groundExtract(page, declared.extractOpts, claim, driver)
             : nonGrounding()
           : undefined;
+      const afterFp = await fingerprint(page);
       record({
         kind, action, declaration: "auto", verdict: grounding ? grounding.verdict : "inconclusive",
-        evidence: { before: beforeFp, after: await fingerprint(page), settled, session, ...(grounding ? { grounding } : {}), ...(kind === "nav" ? { nav: { status: navStatus ?? null } } : {}) },
+        evidence: { before: beforeFp, after: afterFp, settled, session, ...(grounding ? { grounding } : {}), ...(kind === "nav" ? { nav: { status: navStatus ?? null } } : {}), observer: observerOf(), context: { before: ctxOf(beforePage.id, beforeFp), after: ctxOf(page.id, afterFp) } },
         attempt: null, agent_claim: null, cost, timestamp: new Date().toISOString(),
       });
       if (threw) throw threw;
@@ -607,24 +682,33 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
     const data = (claim as { data?: { success?: boolean; message?: string; actions?: Action[] } })?.data;
     const actions = data?.actions ?? null;
     const first = await captureState(page);
-    let decision = await decideWrite(page, beforeState!, first, actions, pageSwitched, settled, decls.length ? 0 : waitMs);
+    let decision = await decideWrite(page, beforeState!, first, actions, tab, settled, decls.length ? 0 : waitMs);
     let post = decision.post;
+    const unreadable = post.reason === "observer-lost";
 
-    if (decls.length && decision.kind === "write") {
+    if (decls.length && decision.kind === "write" && !unreadable) {
       const results = await checkDeclarations(page, decls, waitMs);
       // refresh the auto evidence once after the poll, then compose
-      decision = await decideWrite(page, beforeState!, await captureState(page), actions, pageSwitched, settled, 0);
+      decision = await decideWrite(page, beforeState!, await captureState(page), actions, tab, settled, 0);
       post = { ...decision.post, ...applyDeclarations(decision.post.auto, results), declared: results };
     }
-    if (pageSwitched) post.newPageUrl = await page.url().catch(() => "");
+    if (tab !== "same") post.newPageUrl = await page.url().catch(() => "");
 
-    const session = await detectSession(page);
+    // An unreadable page is not a blank page: no detector runs on it.
+    const session: SessionEvidence = unreadable
+      ? { obstruction: null, confidence: "high", detail: "unreadable", checked: [] }
+      : await detectSession(page);
     let verdict = decision.kind === "write" ? sessionVerdict(post.verdict, session, post.reason) : post.verdict;
+    const observer = observerOf();
+    if (unreadable) observer!.lost = "reader-unreadable";
 
     // M2: a server error in this write's window overrides an optimistic
     // page-read verdict. errorsSince() filters to the page origin plus any
     // caller-declared apiOrigins, so a third-party analytics 500 never fires
     // this (the cry-wolf guard); a split-origin write host opts in explicitly.
+    // Requested-but-never-attached is blind too (invariant 9), and the demotion
+    // below must not hide behind `if (sc)`.
+    const blind = sc ? sc.lost() : opts.network ? "attach-failed" : null;
     if (sc) {
       const origins = [new URL(beforeState!.fp.href || "http://x").origin, ...(opts.network?.apiOrigins ?? [])];
       // Wait for THIS write's own in-flight requests to answer before judging,
@@ -639,7 +723,7 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
         post.reason = net.reason;
         post.confidence = net.confidence;
         verdict = net.verdict;
-      } else if (verdict === "landed" && post.confidence === "heuristic" && pending > 0) {
+      } else if (verdict === "landed" && post.confidence === "heuristic" && !blind && pending > 0) {
         // A watched write left the browser but never answered within the budget.
         // An optimistic banner (`confirmation`/`form-cleared`, heuristic) can lie
         // while its POST is still in flight — so we cannot call this landed. We
@@ -658,6 +742,20 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
       // lifting on it reintroduces false-landed. Shrink inconclusive the sound
       // way: declare a postcondition (probe/text). See docs/FINDINGS.
       if (errors.length) post.network = { errors };
+    }
+    if (blind) {
+      observer!.network = "blind";
+      observer!.lost ??= blind;
+      if (verdict === "landed" && post.confidence === "heuristic") {
+        // The one verdict the network can overturn is an optimistic page read —
+        // and this channel could not see. Silence from a blind reader is not
+        // "no errors" (invariant 9). A high-confidence landed (navigation, a
+        // field-match, a declaration) never leaned on the network and stands.
+        post.verdict = "inconclusive";
+        post.reason = "observer-lost";
+        post.confidence = "high";
+        verdict = "inconclusive";
+      }
     }
 
     // Length-mask the typed value of EVERY action that targeted a password
@@ -682,7 +780,7 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
       // store the evaluated (password-redacted) declarations, never the caller's plaintext copy
       declaration: decls.length ? (post.declared ? post.declared.map((r) => r.declaration) : decls) : "auto",
       verdict,
-      evidence: { before: beforeState!.fp, after: decision.after.fp, settled, session, postcondition: post, ...(screenshot ? { screenshot } : {}) },
+      evidence: { before: beforeState!.fp, after: decision.after.readable ? decision.after.fp : null, settled, session, postcondition: post, ...(screenshot ? { screenshot } : {}), observer, context: { before: ctxOf(beforePage.id, beforeFp), after: ctxOf(page.id, decision.after.readable ? decision.after.fp : null) } },
       attempt,
       // Only a driver that self-reports (Stagehand's ActResult carries `success`)
       // gets a sealed claim. A Playwright write has actions but no claim, so it
