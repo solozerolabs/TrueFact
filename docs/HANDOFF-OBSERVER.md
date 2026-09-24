@@ -12,7 +12,9 @@ For the session that picks this up. Everything here is on branch **`feat/observe
 | `fdd78dc` | `docs`: the spec, [docs/OBSERVER-PLAN.md](OBSERVER-PLAN.md) rev 2. Read it first; it explains every decision and what was rejected |
 | `4897952` | `feat(observer)`: the implementation (src + tests) |
 | `c4d4f0f` | `docs(observer)`: AGENTS.md invariant 9, README, SERVE.md, WATCH-PLAN.md, SPEC.md |
-| (next) | `docs(observer)`: two wording fixes so docs match code |
+| `5d4c78f` | `docs(observer)`: two wording fixes so docs match code |
+| `dee3eca` | `docs`: this handoff |
+| `c2f651f` | `fix(driver-playwright)`: targetId lookup inside a promise; a page without `context()` (the demo hands a Stagehand Page to this driver) falls back to its `pageId`. Found by the full suite: the eager lookup threw at construction and hung `truefact demo` |
 
 ## What was built, and why
 
@@ -34,15 +36,16 @@ The review found five ways TrueFact produced a wrong record when its own observe
 - `Actor` type + `parseActor("agent=x,run=y")` in index.ts; `Step.actor` (optional, **stored verbatim**, never redacted: `redactText` scrubs emails and a principal is often one) and `Step.observer = "truefact@<version>"` (from package.json via `createRequire`), stamped once in `recorder()`. `--actor` on `serve` and `watch`. OTel name mapping is in the README.
 
 ### Tests
-24 new `it`s, BDD-named, across `test/cdp-fd`, `postcondition`, `driver`, `driver-playwright`, `serve`, `sidecar-network`, `watch`, `chain`, `replay`. `test/helpers.ts` `state()` now defaults `readable: true`. Last verified: pure files 188/188, browser-backed files 59/59 (sidecar-network, watch, serve, cdp-fd) and 65/65 earlier (driver, driver-playwright, netwatch-*).
+24 new `it`s, BDD-named, across `test/cdp-fd`, `postcondition`, `driver`, `driver-playwright`, `serve`, `sidecar-network`, `watch`, `chain`, `replay`. `test/helpers.ts` `state()` now defaults `readable: true`. **Full suite at `c2f651f`: 364/364 green** (`npm test`, ~10 min, local Chrome, no key). `test/bench-fixtures.test.ts`, which pins TrueFact's verdict on every benchmark fixture, is in that run and unchanged, so the benchmark's inconclusive rate did not move.
 
 ## What is left (in order)
 
-1. **Confirm the full suite is green.** `npm test` in the worktree takes >10 min (needs local Chrome, no LLM key). The last full run was killed before finishing; individual files are green. If `test/bench-fixtures.test.ts` moved, the benchmark's inconclusive rate moved: read [docs/OBSERVER-PLAN.md §9](OBSERVER-PLAN.md) and fix the code, not the pin.
-2. **`npm run bench:score`** (no browser, no key): confirm 0/279 false halts and the inconclusive rate are unchanged. Plan §9.
-3. **Merge**: push `feat/observer`, open the PR against `master` (repo `solozerolabs/TrueFact`, public; nothing from `strategy/` may go in). Then `git worktree remove ../TrueReplay-observer`. Master's local `a8aa4a1` will be redundant after merge (same change as `ddb1a2b`); rebase or drop it.
-4. **Browserbase teardown probe** (plan §10, separate change): Stagehand's own sidecar warns that closing an auxiliary browser-level WebSocket ends a Browserbase session; `withTrueFact.close()` closes one. Probe on a remote endpoint before claiming Browserbase support.
-5. Optional cleanups the plan listed but that were not needed to ship: none pending (the `sidecar.ts` re-export, `readTree`, `PageState.pageId` are already gone).
+Nothing is blocking. The branch is complete and green; what remains is integration and one probe.
+
+1. **`npm run bench:score` is informational only** (done: PUBLISH true, cry-wolf 0/279). It re-scores the *committed* oracle run, so it cannot see a verdict change; the real gate for "did the verdict logic move" is `test/bench-fixtures.test.ts`, which is green.
+2. **Merge**: push `feat/observer`, open the PR against `master` (repo `solozerolabs/TrueFact`, public; nothing from `strategy/` may go in). Then `git worktree remove ../TrueReplay-observer`. Master's local `a8aa4a1` will be redundant after merge (same change as `ddb1a2b`); rebase or drop it.
+3. **Browserbase teardown probe** (plan §10, separate change): Stagehand's own sidecar warns that closing an auxiliary browser-level WebSocket ends a Browserbase session; `withTrueFact.close()` closes one. Probe on a remote endpoint before claiming Browserbase support.
+4. Optional cleanups the plan listed: none pending (the `sidecar.ts` re-export, `readTree`, `PageState.pageId`, the `pages()[0]` fallback are all gone).
 
 ## How to run things
 
