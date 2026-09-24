@@ -34,6 +34,8 @@ TrueFact never trusts the agent. It reads the page. The agent's claim is recorde
 
 A checker that never says "I don't know" is lying somewhere. **Inconclusive is a first-class verdict**, tracked separately from landed / did-not-land.
 
+Two reasons cover the observer itself rather than the page (docs/OBSERVER-PLAN.md): **`observer-lost`** — the reader could not read, or the network channel never attached / lost its socket / failed `Network.enable`; anything that depended on it is `inconclusive`, never `landed`, never `did-not-land`, and a write that ran always records a step. **`context-changed`** — after the action the active tab is one that already existed before it (a focus change, not something the action opened); only a tab the action opened reads `landed / new-page`.
+
 ## Output
 
 - **Per step:** `{kind: write|read|nav, action, declaration (or "auto"), verdict, evidence, attempt, agent_claim, cost, timestamp}`. `agent_claim` is Stagehand's self-report (`ActResult.data.success`, `message`); `attempt` is what it says it did (`actions[]`: selector, method, args) and is used only to decide *where to read the page*, never as evidence of outcome. `cost` is `{model, inputTokens, outputTokens, totalTokens, inferenceTimeMs}` read from Stagehand's `metadata.usage` (`null` when the result carries none); `model` is the per-call override the caller requested, which Stagehand does not echo back. This is the raw material Day 6 sums into $/run.

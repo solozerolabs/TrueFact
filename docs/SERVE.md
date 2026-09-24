@@ -27,7 +27,8 @@ rides into the run transcript as evidence the model cannot fake.
      `--remote-debugging-port=<N>`; serve attaches a WebSocket CDP client itself.
      Simpler, but the port is reachable by any same-UID process — use only where
      that is acceptable.
-2. Spawn `truefact serve (--cdp-fd <N> | --port <N>) [--jsonl run.jsonl] [--api-origins a,b] [--body-errors]`.
+2. Spawn `truefact serve (--cdp-fd <N> | --port <N>) [--jsonl run.jsonl] [--api-origins a,b] [--body-errors] [--actor agent=x,run=y]`.
+   `--actor` (comma-separated `key=value`; keys `agent`, `version`, `model`, `run`, `principal`, `tenant`) is stamped verbatim on every step next to `observer: "truefact@<version>"`.
    It prints `{"ok":true,"ready":true}` once attached.
 3. One JSON object per line, request → reply, strictly one bracket at a time:
 
@@ -57,6 +58,8 @@ chained and (with `--jsonl`) appended as they happen, so `truefact verify` /
 - A second `before` while one is open is refused (`ok:false`); a bracket is causal
   or it is nothing.
 - No DevTools endpoint → `serve` exits 2. It never fabricates a verdict.
+- `after` **always** returns a `step` once the action ran, even when nothing can be read afterwards (the page closed, the fd socket died mid-bracket). That step is `inconclusive / observer-lost`; a missing step is never the answer.
+- Each step records what the observer could see: `evidence.observer` (`{ network: "watched" | "blind" | "off", lost?: "socket-closed" | "enable-failed" | "attach-failed" | "reader-unreadable" | "no-active-page" | "target-detached" | "target-crashed" }`) and `evidence.context` (`{ before, after }`, each the real CDP `targetId` and origin — no longer the constant `"cdp"`). A blind channel demotes a heuristic `landed` to `inconclusive / observer-lost` and never promotes.
 - Same limits as the Playwright driver: one page target, no popups/iframes.
 
 ## Library form

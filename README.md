@@ -144,7 +144,7 @@ A Playwright action carries no self-report, so there's no claim to disbelieve. Y
 Not using Stagehand or Playwright? Run your agent (Browser-Use, Puppeteer, a human) against a Chrome started with `--remote-debugging-port=9222`, then:
 
 ```bash
-truefact watch --port 9222 [--api-origins api.yoursite.com] [--body-errors] [--jsonl run.jsonl]
+truefact watch --port 9222 [--api-origins api.yoursite.com] [--body-errors] [--jsonl run.jsonl] [--actor agent=x,run=y]
 ```
 
 `watch` attaches out-of-band. Per write request, it reports whether the **server** accepted it. A clean 2xx reads `landed`. A 5xx, a 4xx on a write, or a wire failure reads `did-not-land`. With `--body-errors`, so does a 200 whose body says it failed. This is the **network-truth floor**. It verifies writes that hit the network, scoped to your page origin plus any `--api-origins`. Retry-collapse means a transient error that then succeeds never accuses.
@@ -156,7 +156,7 @@ Observe mode has no wrapped action to bracket. So it stays conservative, to prot
 `watch` is the passive network floor. `serve` is the full verdict for a browser TrueFact didn't launch: a Python Playwright bridge, Puppeteer, anything that can start Chrome with `--remote-debugging-port`. Send `before`, do the action, send `after`, get the Step. Protocol in [docs/SERVE.md](docs/SERVE.md).
 
 ```bash
-truefact serve --port 9222 --jsonl run.jsonl
+truefact serve --port 9222 --jsonl run.jsonl [--actor agent=x,run=y]
 ```
 
 ## Agents without a browser
@@ -199,6 +199,31 @@ The record holds verdicts, the a11y-tree diff, form field values, URLs, a `write
 ```ts
 const tr = withTrueFact(stagehand, { redactFields: ["ssn", /card/] }); // values gone, keys kept
 ```
+
+## Who acted, and could we see?
+
+Every step carries `observer: "truefact@<version>"`, the recorder that produced the verdict. Give the run an `actor` and each step carries that too, sealed into the hash and the signature like any other field:
+
+```ts
+withTrueFact(stagehand, { actor: { agent: "claims-bot", model: "claude-opus-5-5", run: "r-8841", principal: "okta|u123" } }); // openRun takes the same option
+```
+```bash
+truefact serve --port 9222 --actor agent=claims-bot,run=r-8841
+truefact watch --port 9222 --actor agent=claims-bot
+```
+
+| `actor` key | OpenTelemetry GenAI name |
+|---|---|
+| `agent` | `gen_ai.agent.id` |
+| `version` | `gen_ai.agent.version` |
+| `model` | `gen_ai.request.model` |
+| `run` | `gen_ai.conversation.id` |
+| `principal` | `user.id` |
+| `tenant` | (none) |
+
+Actor values are opaque and stored verbatim, not redacted, because a `principal` is the join key into your IdP or session logs. Where the record will be shared, prefer an IdP subject (`okta|u123`) over an email. Unsigned, these fields are self-asserted; signed, they are tamper-evident. Either way they say who claimed to act, not who did. No verdict reads them.
+
+The record also says whether TrueFact could see. `evidence.observer` is `{ network: "watched" | "blind" | "off", lost? }`; `evidence.context` is the CDP target and origin read before and after. A reader that could not read, or a network channel that never attached or lost its socket, gives `inconclusive` with reason `observer-lost`, never `landed`. A switch to a tab that already existed before the action gives `inconclusive` with reason `context-changed`; only a tab the action opened reads `new-page`.
 
 ## Does it cry wolf?
 
