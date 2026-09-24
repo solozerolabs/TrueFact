@@ -1,8 +1,52 @@
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { classify, normalizeTree, multisetDiff, sessionVerdict } from "../src/postcondition.js";
+import { classify, normalizeTree, multisetDiff, sessionVerdict, captureState, decideWrite } from "../src/postcondition.js";
 import { withTrueFact } from "../src/index.js";
+import type { PageReader } from "../src/driver.js";
 import { serve, state, form, session, fakeStagehand, withBrowser, type Fixture } from "./helpers.js";
+
+// ---------------------------------------------------------------------------
+// Unit: observer liveness (OBSERVER-PLAN §3, test A11). Pure — the "reader" is a
+// dead one whose every read throws, the shape of a closed tab or a dead socket.
+// ---------------------------------------------------------------------------
+describe("observer liveness: an unreadable page is a missing observer, not a clean one (A11)", () => {
+  // Built inline on purpose: this is exactly what a detached page looks like to us.
+  const dead: PageReader = {
+    id: "x",
+    snapshotTree: async () => null,
+    evaluate: async () => {
+      throw new Error("detached");
+    },
+    url: async () => {
+      throw new Error("detached");
+    },
+    count: async () => 0,
+    screenshot: async () => new Uint8Array(),
+    waitForLoadState: async () => {},
+  };
+  const click = [{ selector: "#x", description: "", method: "click", arguments: [] }] as never;
+
+  it("A11a: given an unreadable `before`, when decideWrite runs, then inconclusive / observer-lost without polling", async () => {
+    const t = Date.now();
+    const d = await decideWrite(dead, state({ readable: false }), state(), click, "same", true, 5000);
+    assert.equal(d.post.verdict, "inconclusive");
+    assert.equal(d.post.reason, "observer-lost");
+    assert.ok(Date.now() - t < 200, `returned before the waitMs poll (took ${Date.now() - t} ms)`);
+  });
+
+  it("A11b: given an unreadable `firstAfter`, when decideWrite runs, then inconclusive / observer-lost without polling", async () => {
+    const t = Date.now();
+    const d = await decideWrite(dead, state(), state({ readable: false }), click, "same", true, 5000);
+    assert.equal(d.post.verdict, "inconclusive");
+    assert.equal(d.post.reason, "observer-lost");
+    assert.ok(Date.now() - t < 200, `returned before the waitMs poll (took ${Date.now() - t} ms)`);
+  });
+
+  it("A11c: given a reader whose evaluate throws, when captureState runs, then the PageState is readable === false", async () => {
+    const s = (await captureState(dead)) as unknown as { readable?: boolean };
+    assert.equal(s.readable, false);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Unit: classify() is pure — no browser. One `it` per §4 row + ordering.
@@ -16,42 +60,47 @@ describe("classify (pure §4 rows, DAY4 R2)", () => {
     assert.equal(c.confidence, confidence);
   };
 
-  it("row 1: a new tab -> landed / new-page / high", () => expect(classify(base, base, true), "landed", "new-page", "high"));
+  it("row 1: a new tab (not in the before-set) -> landed / new-page / high", () => expect(classify(base, base, "new"), "landed", "new-page", "high"));
+  it("row 1b (B rule): focus moved to a tab that existed before the action -> inconclusive / context-changed, never new-page", () => {
+    const c = classify(base, base, "existing");
+    assert.equal(c.verdict, "inconclusive");
+    assert.equal(c.reason, "context-changed");
+  });
   it("row 2: a path change -> landed / navigated / high", () =>
-    expect(classify(base, state({ href: "http://x/b" }), false), "landed", "navigated", "high"));
+    expect(classify(base, state({ href: "http://x/b" }), "same"), "landed", "navigated", "high"));
   it("row 3: :user-invalid rose -> did-not-land / validation-error / high (empty tree diff)", () =>
-    expect(classify(base, state({ userInvalidCount: 1 }), false), "did-not-land", "validation-error", "high"));
+    expect(classify(base, state({ userInvalidCount: 1 }), "same"), "did-not-land", "validation-error", "high"));
   it("row 4: alert + error text -> did-not-land / validation-error / high", () =>
-    expect(classify(base, state({ tree: ["alert", "StaticText: Email is required"] }), false), "did-not-land", "validation-error", "high"));
+    expect(classify(base, state({ tree: ["alert", "StaticText: Email is required"] }), "same"), "did-not-land", "validation-error", "high"));
   it("row 5: error text with no role -> inconclusive / error-text / heuristic", () =>
-    expect(classify(base, state({ tree: ["StaticText: Something failed"] }), false), "inconclusive", "error-text", "heuristic"));
+    expect(classify(base, state({ tree: ["StaticText: Something failed"] }), "same"), "inconclusive", "error-text", "heuristic"));
   it("row 6: dialog + buttons -> inconclusive / prompt / high (beats confirmation)", () =>
-    expect(classify(base, state({ tree: ["dialog", "StaticText: Confirm your order?", "button: Confirm", "button: Cancel"] }), false), "inconclusive", "prompt", "high"));
+    expect(classify(base, state({ tree: ["dialog", "StaticText: Confirm your order?", "button: Confirm", "button: Cancel"] }), "same"), "inconclusive", "prompt", "high"));
   it("row 7: status role -> landed / confirmation / heuristic", () =>
-    expect(classify(base, state({ tree: ["status", "StaticText: Order placed"] }), false), "landed", "confirmation", "heuristic"));
+    expect(classify(base, state({ tree: ["status", "StaticText: Order placed"] }), "same"), "landed", "confirmation", "heuristic"));
   it("row 8: form cleared -> landed / form-cleared / heuristic", () =>
-    expect(classify(state({ forms: { email: form("a@b.co") } }), state({ forms: { email: form("") } }), false), "landed", "form-cleared", "heuristic"));
+    expect(classify(state({ forms: { email: form("a@b.co") } }), state({ forms: { email: form("") } }), "same"), "landed", "form-cleared", "heuristic"));
   it("row 9: hash-only change, nothing else -> inconclusive / hash-only-nav / heuristic", () =>
-    expect(classify(base, state({ href: "http://x/a#done" }), false), "inconclusive", "hash-only-nav", "heuristic"));
+    expect(classify(base, state({ href: "http://x/a#done" }), "same"), "inconclusive", "hash-only-nav", "heuristic"));
   it("row 10: unclassified change -> inconclusive / changed-unclassified / heuristic", () =>
-    expect(classify(base, state({ tree: ["menu", "menuitem: Copy"] }), false), "inconclusive", "changed-unclassified", "heuristic"));
+    expect(classify(base, state({ tree: ["menu", "menuitem: Copy"] }), "same"), "inconclusive", "changed-unclassified", "heuristic"));
   it("row 11 (R2): nothing changed -> inconclusive / no-change / heuristic — absence is not a mechanism", () =>
-    expect(classify(base, base, false), "inconclusive", "no-change", "heuristic"));
+    expect(classify(base, base, "same"), "inconclusive", "no-change", "heuristic"));
   // --- false-landed guards (2026-09 soundness review) --------------------------
   it("bare alert with no confirm/error text -> inconclusive, never landed", () =>
-    expect(classify(base, state({ tree: ["alert", "StaticText: Notice"] }), false), "inconclusive", "changed-unclassified", "heuristic"));
+    expect(classify(base, state({ tree: ["alert", "StaticText: Notice"] }), "same"), "inconclusive", "changed-unclassified", "heuristic"));
   it("alert announcing a failure ('Card declined') -> did-not-land, not landed", () =>
-    expect(classify(base, state({ tree: ["alert", "StaticText: Card declined"] }), false), "did-not-land", "validation-error", "high"));
+    expect(classify(base, state({ tree: ["alert", "StaticText: Card declined"] }), "same"), "did-not-land", "validation-error", "high"));
   it("a status role whose text says it failed ('Payment unsuccessful') -> not landed", () =>
-    assert.notEqual(classify(base, state({ tree: ["status", "StaticText: Payment unsuccessful"] }), false).verdict, "landed"));
+    assert.notEqual(classify(base, state({ tree: ["status", "StaticText: Payment unsuccessful"] }), "same").verdict, "landed"));
   it("confirm word negated on the line ('Order could not be placed') -> not landed", () =>
-    assert.notEqual(classify(base, state({ tree: ["StaticText: Order could not be placed"] }), false).verdict, "landed"));
+    assert.notEqual(classify(base, state({ tree: ["StaticText: Order could not be placed"] }), "same").verdict, "landed"));
   it("navigation to an error URL (?error=declined) -> inconclusive, not landed/navigated/high", () =>
-    expect(classify(base, state({ href: "http://x/checkout?error=declined" }), false), "inconclusive", "navigated", "heuristic"));
+    expect(classify(base, state({ href: "http://x/checkout?error=declined" }), "same"), "inconclusive", "navigated", "heuristic"));
   it("ordering: navigation beats a stale validation flag", () =>
-    assert.equal(classify(base, state({ href: "http://x/b", userInvalidCount: 1 }), false).reason, "navigated"));
+    assert.equal(classify(base, state({ href: "http://x/b", userInvalidCount: 1 }), "same").reason, "navigated"));
   it("ordering: an alert-error beats confirmation text on the same page", () =>
-    assert.equal(classify(base, state({ tree: ["alert", "StaticText: invalid — order not placed"] }), false).reason, "validation-error"));
+    assert.equal(classify(base, state({ tree: ["alert", "StaticText: invalid — order not placed"] }), "same").reason, "validation-error"));
 });
 
 describe("sessionVerdict (obstruction rule + destination gate + R2 corroboration)", () => {

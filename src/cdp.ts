@@ -25,7 +25,35 @@ export interface CdpConn {
   /** Subscribe to a CDP event method; multiple handlers per method are fine. The
    *  handler also gets the `sessionId` the event came from (undefined = root/page). */
   on(method: string, handler: (params: Record<string, unknown>, sessionId?: string) => void): void;
+  /** Why this observer can no longer see, or null while it can. Sticky: the first
+   *  reason wins. A socket close (ours or the peer's), a detached/crashed page
+   *  target, or a child whose Network.enable failed all count — an observer that
+   *  cannot see is a missing observer, never a clean one (invariant 9). */
+  lost(): string | null;
+  /** Called once, with the reason, the moment `lost()` becomes non-null. */
+  onLost(cb: (reason: string) => void): void;
   close(): void;
+}
+
+/** The shared liveness state behind `lost()`/`onLost()`. `dead` reasons also
+ *  short-circuit `cmd()` to undefined: a crashed target accepts commands and
+ *  never answers (probed), so without this every read waits CMD_TIMEOUT_MS. */
+function liveness() {
+  let reason: string | null = null;
+  let dead = false;
+  const cbs: ((reason: string) => void)[] = [];
+  return {
+    mark(r: string, isDead = true): void {
+      if (dead) return; // a dead socket is terminal; nothing more to learn
+      const first = reason === null;
+      if (isDead || first) reason = r; // a later socket death outranks an earlier blind child
+      dead = isDead;
+      if (first) for (const cb of cbs) cb(r);
+    },
+    isDead: () => dead,
+    lost: () => reason,
+    onLost: (cb: (reason: string) => void) => { cbs.push(cb); },
+  };
 }
 
 /**
@@ -41,7 +69,14 @@ export async function cdpConnect(port: number): Promise<CdpConn | null> {
     }[];
     const page = list.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
     if (!page?.webSocketDebuggerUrl) return null;
-    return await openWs(page.webSocketDebuggerUrl);
+    const conn = await openWs(page.webSocketDebuggerUrl);
+    // A page-level client IS its target: the tab going away is the observer going away.
+    conn.on("Inspector.detached", () => conn.markLost("target-detached"));
+    conn.on("Inspector.targetCrashed", () => conn.markLost("target-crashed"));
+    // Network is enabled here, once, for every consumer (reader, sidecar, watch);
+    // a failed enable means this observer never sees a request — blind from the start.
+    if ((await conn.cmd("Network.enable")) === undefined) conn.markLost("enable-failed", false);
+    return conn;
   } catch {
     return null; // best-effort: no port, no DevTools endpoint, no network verification
   }
@@ -82,7 +117,12 @@ export async function cdpConnectBrowser(port: number): Promise<CdpConn | null> {
       // nested auto-attach BEFORE resuming, so a parked child can't load and fire
       // its first request before we're listening.
       if (type === "page" || type === "iframe") {
-        void conn.cmd("Network.enable", {}, sid).then(() => type === "page" && ready());
+        // A child whose Network never enabled is a blind spot, not a clean one:
+        // its writes would pass unseen. Record it (non-fatal: the socket is fine).
+        void conn.cmd("Network.enable", {}, sid).then((r) => {
+          if (r === undefined) conn.markLost("enable-failed", false);
+          else if (type === "page") ready();
+        });
         void conn.cmd("Target.setAutoAttach", AUTO_ATTACH, sid); // nested OOPIFs / grandchild popups
       }
       // Resume EVERY target (all types), or an auto-attached popup stays parked.
@@ -90,8 +130,10 @@ export async function cdpConnectBrowser(port: number): Promise<CdpConn | null> {
     });
     await conn.cmd("Target.setAutoAttach", AUTO_ATTACH);
     // Don't return until the current page's Network is enabled (else the first
-    // write races the enable), bounded so a pathological browser can't hang.
-    await Promise.race([firstPageEnabled, new Promise((r) => setTimeout(r, 2000))]);
+    // write races the enable), bounded so a pathological browser can't hang —
+    // and if the bound wins, say so: the first write may go unwatched.
+    const enabled = await Promise.race([firstPageEnabled.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 2000))]);
+    if (!enabled) conn.markLost("enable-failed", false);
     return conn;
   } catch {
     return null;
@@ -101,7 +143,10 @@ export async function cdpConnectBrowser(port: number): Promise<CdpConn | null> {
 /** Open a raw-CDP client over a WebSocket URL (a browser or page target). Shared
  *  by cdpConnect and cdpConnectBrowser; the only difference is the endpoint and
  *  whether the caller sets up auto-attach. */
-async function openWs(url: string): Promise<CdpConn> {
+/** A CdpConn plus the connector-internal `markLost` (not part of the public seam). */
+type RawConn = CdpConn & { markLost(reason: string, dead?: boolean): void };
+
+async function openWs(url: string): Promise<RawConn> {
   const ws = new WebSocket(url);
   await new Promise<void>((res, rej) => {
     ws.onopen = () => res();
@@ -131,17 +176,23 @@ async function openWs(url: string): Promise<CdpConn> {
   };
   // On close/error, settle every in-flight command to undefined — nothing must
   // wait forever on a dead socket. Each resolver clears its own timeout.
+  const live = liveness();
   const drain = () => {
+    live.mark("socket-closed");
     for (const fn of pending.values()) fn(undefined);
     pending.clear();
   };
   ws.onclose = drain;
+  ws.onerror = drain;
 
   return {
+    lost: live.lost,
+    onLost: live.onLost,
+    markLost: live.mark,
     cmd: (method, params, sessionId) =>
       new Promise((resolve) => {
         const cid = ++id;
-        if (ws.readyState !== 1 /* OPEN */) return resolve(undefined);
+        if (ws.readyState !== 1 /* OPEN */ || live.isDead()) return resolve(undefined);
         const timer = setTimeout(() => { if (pending.delete(cid)) resolve(undefined); }, CMD_TIMEOUT_MS);
         pending.set(cid, (result) => { clearTimeout(timer); resolve(result); });
         try {
@@ -156,6 +207,7 @@ async function openWs(url: string): Promise<CdpConn> {
       handlers.set(method, hs);
     },
     close: () => {
+      live.mark("socket-closed"); // synchronously: a closed observer is closed now, not when the event lands
       try {
         ws.close();
       } catch {
@@ -213,18 +265,21 @@ export function cdpConnectSocket(sock: Socket): CdpConn {
   });
   // Peer gone (crash / socket closed): settle every in-flight command to
   // undefined so a read fails open instead of hanging forever.
+  const live = liveness();
   const drain = () => {
+    live.mark("socket-closed");
     for (const fn of pending.values()) fn(undefined);
     pending.clear();
   };
   sock.on("error", drain);
   sock.on("close", drain);
-
-  return {
+  const conn: CdpConn = {
+    lost: live.lost,
+    onLost: live.onLost,
     cmd: (method, params) =>
       new Promise((resolve) => {
         const cid = ++id;
-        if (sock.destroyed) return resolve(undefined);
+        if (sock.destroyed || live.isDead()) return resolve(undefined);
         const timer = setTimeout(() => { if (pending.delete(cid)) resolve(undefined); }, CMD_TIMEOUT_MS);
         pending.set(cid, (result) => { clearTimeout(timer); resolve(result); });
         try {
@@ -239,6 +294,7 @@ export function cdpConnectSocket(sock: Socket): CdpConn {
       handlers.set(method, hs);
     },
     close: () => {
+      live.mark("socket-closed");
       try {
         sock.destroy();
       } catch {
@@ -246,4 +302,9 @@ export function cdpConnectSocket(sock: Socket): CdpConn {
       }
     },
   };
+  // The fd bridge is single-page too: its target going away is the observer going away.
+  conn.on("Inspector.detached", () => live.mark("target-detached"));
+  conn.on("Inspector.targetCrashed", () => live.mark("target-crashed"));
+  void conn.cmd("Network.enable").then((r) => { if (r === undefined) live.mark("enable-failed", false); });
+  return conn;
 }

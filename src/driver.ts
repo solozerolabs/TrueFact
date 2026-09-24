@@ -20,8 +20,10 @@ export interface PageReader {
   count(selector: string): Promise<number>; // css | xpath= | text=
   screenshot(): Promise<Uint8Array>;
   waitForLoadState(state: "domcontentloaded", timeoutMs: number): Promise<void>;
-  /** Stable per-tab identity, for tab-switch detection. */
-  readonly id: string;
+  /** Stable per-tab identity: the CDP targetId (never changes on navigation,
+   *  even cross-site; a new one means a new tab). Set by the time activePage()
+   *  resolves. */
+  id: string;
 }
 
 /** The agent (drive) channel + tab resolution. */
@@ -33,6 +35,9 @@ export interface Driver {
   activePage(): Promise<PageReader>;
   /** Wrap a specific page handle (e.g. an extract's options.page) as a reader. */
   readerFor(handle: unknown): PageReader;
+  /** Every open tab's id, for the context rule: a tab that existed before the
+   *  action cannot be the tab this action opened. Single-page drivers omit it. */
+  pageIds?(): Promise<string[]>;
 }
 
 /** Adapt one Stagehand Page to the PageReader surface. */
@@ -58,9 +63,12 @@ export function stagehandReader(page: Page): PageReader {
 
 /** Adapt a Stagehand instance to the Driver surface. */
 export function stagehandDriver(stagehand: Stagehand): Driver {
+  // No fallback to pages()[0]: after the active tab closes, another tab is not
+  // "the page the action ran on" — reading it produced a false landed (the
+  // probe behind docs/OBSERVER-PLAN.md §1 case 5). Throw, and the bracket
+  // records observer-lost.
   const active = async (): Promise<Page> => {
-    const ctx = stagehand.browser.context;
-    const page = (await ctx.activePage()) ?? (await ctx.pages())[0];
+    const page = await stagehand.browser.context.activePage();
     if (!page) throw new Error("TrueFact: no active page on the Stagehand browser context");
     return page;
   };
@@ -74,5 +82,6 @@ export function stagehandDriver(stagehand: Stagehand): Driver {
     },
     activePage: async () => stagehandReader(await active()),
     readerFor: (handle) => stagehandReader(handle as Page),
+    pageIds: async () => (await stagehand.browser.context.pages()).map((p) => String(p.pageId ?? "")),
   };
 }

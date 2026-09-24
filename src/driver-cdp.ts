@@ -29,9 +29,18 @@ interface EvalResult {
 }
 
 async function evalIn<T>(conn: CdpConn, expression: string): Promise<T> {
-  const r = (await conn.cmd("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true })) as EvalResult;
-  if (r?.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text ?? "cdp evaluate threw");
-  return r?.result?.value as T;
+  const r = (await conn.cmd("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true })) as EvalResult | undefined;
+  // A real reply always carries `result`. No reply (dead conn, timeout, an
+  // {error} frame) is a failed read, never an empty page — invariant 9.
+  if (r === undefined) throw new Error(conn.lost() ?? "cdp evaluate: no reply");
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text ?? "cdp evaluate threw");
+  return r.result?.value as T;
+}
+
+/** The page target's id, read once. "" if the conn can't say (older Chrome). */
+async function targetIdOf(conn: CdpConn): Promise<string> {
+  const t = (await conn.cmd("Target.getTargetInfo")) as { targetInfo?: { targetId?: string } } | undefined;
+  return t?.targetInfo?.targetId ?? "";
 }
 
 // The one selector grammar `count()` sees (declaration.ts): css | xpath=… | text=…
@@ -44,7 +53,7 @@ const COUNT_JS = `(function(sel){
   return document.querySelectorAll(sel).length; })`;
 
 /** Adapt a raw CDP page connection to the PageReader surface. */
-export function cdpReader(conn: CdpConn, id = "cdp"): PageReader {
+export function cdpReader(conn: CdpConn, id = ""): PageReader {
   let axEnabled: Promise<unknown> | null = null;
   return {
     id,
@@ -85,6 +94,7 @@ export function cdpReader(conn: CdpConn, id = "cdp"): PageReader {
  */
 export function cdpDriver(conn: CdpConn, perform: Perform): Driver {
   const reader = cdpReader(conn);
+  const ready = targetIdOf(conn).then((id) => { reader.id = id; });
   const unsupported = (verb: string) => (): never => {
     throw new Error(`TrueFact: the CDP driver has no ${verb}() — use the reader for reads`);
   };
@@ -97,7 +107,7 @@ export function cdpDriver(conn: CdpConn, perform: Perform): Driver {
     extract: unsupported("extract"),
     observe: unsupported("observe"),
     goto: (url) => perform("goto", url),
-    activePage: () => Promise.resolve(reader),
+    activePage: async () => (await ready, reader),
     readerFor: () => reader,
   };
 }

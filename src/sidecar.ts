@@ -8,9 +8,6 @@
 import { cdpConnectBrowser, type CdpConn } from "./cdp.js";
 import { trackWrites, isWriteError, originOf, type WriteOutcome } from "./netwatch.js";
 
-// Re-exported for the modules that imported these from here before netwatch.
-export { originOf, isWriteError, MUTATING, DEFAULT_BODY_ERR, bodyErrorPattern } from "./netwatch.js";
-
 export interface NetError {
   url: string;
   status: number | null; // null = a wire failure with no response (a failed write)
@@ -31,6 +28,10 @@ export interface Sidecar {
   settle(budgetMs: number, origins: string[]): Promise<number>;
   /** Errors on a watched origin since `mark`, after retry-collapse. */
   errorsSince(mark: number, origins: string[]): NetError[];
+  /** Why this reader is blind (its socket died, its Network never enabled), or
+   *  null while it watches. The bracket reads it after settle(); silence from a
+   *  blind reader is never "no errors". */
+  lost(): string | null;
   close(): void;
 }
 
@@ -42,9 +43,11 @@ export interface Sidecar {
  */
 export async function attachSidecar(port: number, opts: SidecarOptions = {}): Promise<Sidecar | null> {
   // Browser-level so popups and cross-origin iframes are seen too (see cdp.ts).
+  // That connector enables Network per child session on attach (the browser
+  // target has no Network domain), so nothing to enable here.
   const conn = await cdpConnectBrowser(port);
   if (!conn) return null;
-  return attachSidecarConn(conn, { ...opts, ownsConn: true });
+  return make(conn, opts, true);
 }
 
 /**
@@ -52,14 +55,16 @@ export async function attachSidecar(port: number, opts: SidecarOptions = {}): Pr
  * — used by `serve` in fd mode, where one CDP channel serves both reads and
  * network events. `close()` does NOT close a shared conn; the owner closes it.
  */
-export async function attachSidecarConn(conn: CdpConn, opts: SidecarOptions & { ownsConn?: boolean } = {}): Promise<Sidecar> {
-  const ownsConn = opts.ownsConn ?? false;
+export function attachSidecarConn(conn: CdpConn, opts: SidecarOptions = {}): Sidecar {
+  // Every connector enables Network itself (per child session on the browser
+  // conn; on connect for a page/fd conn) and reports a failed enable through
+  // lost() — so nothing to enable here, and nothing to guess about the conn type.
+  return make(conn, opts, false);
+}
+
+function make(conn: CdpConn, opts: SidecarOptions, ownsConn: boolean): Sidecar {
   const outcomes: WriteOutcome[] = [];
   const tracker = trackWrites(conn, { bodyErrors: opts.bodyErrors, onOutcome: (o) => outcomes.push(o) });
-  // Enables Network on a page/fd conn (serve's shared channel). On a browser-level
-  // conn (attachSidecar) it's a harmless no-op — that connector enables Network
-  // per child session on attach, since the browser target has no Network domain.
-  await conn.cmd("Network.enable");
 
   const key = (o: WriteOutcome) => o.method + " " + o.url;
   const isError = (o: WriteOutcome) => o.bodyError || o.status == null || isWriteError(o.status, o.method);
@@ -70,8 +75,8 @@ export async function attachSidecarConn(conn: CdpConn, opts: SidecarOptions & { 
   // Snapshot at mark(); the before→after contract keeps one bracket open at a
   // time, so a single stored seq is enough (ponytail: serial use assumed).
   let markSeq = 0;
-
-  return {
+  const self: Sidecar = {
+    lost: () => conn.lost(),
     mark: () => {
       markSeq = tracker.seq();
       return outcomes.length;
@@ -83,7 +88,8 @@ export async function attachSidecarConn(conn: CdpConn, opts: SidecarOptions & { 
       // POST 500s a second later is caught rather than called landed. Only
       // watched-origin mutations hold us, and only until they resolve — a fast
       // site pays nothing; a slow reject pays exactly what correctness costs.
-      while (tracker.pendingWrites(markSeq, watched) > 0 && Date.now() - start < budgetMs)
+      // A dead reader will never answer: stop waiting the moment it is lost.
+      while (tracker.pendingWrites(markSeq, watched) > 0 && Date.now() - start < budgetMs && !self.lost())
         await new Promise((r) => setTimeout(r, 50));
       await tracker.settle(); // drain any 2xx body reads too
       return tracker.pendingWrites(markSeq, watched);
@@ -108,4 +114,5 @@ export async function attachSidecarConn(conn: CdpConn, opts: SidecarOptions & { 
       if (ownsConn) conn.close();
     },
   };
+  return self;
 }

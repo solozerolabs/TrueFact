@@ -21,23 +21,21 @@
 // origin+method+status (never a guessed DOM cause), scoped to a watched-origin
 // allowlist, with retry-collapse so a transient error that then succeeds is
 // dropped (a miss, never a false accusation).
-import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { cdpConnect } from "./cdp.js";
 import { originOf, isWriteError, trackWrites } from "./netwatch.js";
-import { hashStep, makeSigner } from "./chain.js";
-import { redactText } from "./redact.js";
-import type { Step } from "./index.js";
+import { recorder, parseActor, type Actor, type Step } from "./index.js";
 import type { Verdict, PostReason } from "./postcondition.js";
 
 export interface WatchOptions {
   port: number;
   apiOrigins?: string[]; // extra watched origins beyond the page's own (split-origin APIs)
   bodyErrors?: boolean | RegExp; // opt-in 200-that-lies body read (best-effort, see sidecar)
-  jsonl?: string; // append a tamper-evident chain, consumable by view/verify/fleet
+  jsonl?: string; // write a tamper-evident chain, consumable by view/verify/fleet
   signingKey?: string; // ed25519 PEM; else TRUEFACT_SIGNING_KEY
+  actor?: Actor; // who is driving the browser we watch (sealed into every step)
   graceMs?: number; // retry-collapse window before a failure is finalized (default 1200)
   onWrite?: (w: WriteObservation) => void; // live callback (the CLI prints from it)
+  onLost?: (reason: string) => void; // the observer went blind (its socket/target died)
 }
 
 export interface WriteObservation {
@@ -52,6 +50,10 @@ export interface WriteObservation {
 // timers and in-flight body reads (used by tests for determinism).
 export interface WatchSession {
   origins(): string[];
+  /** Why the observer went blind, or null while it can see. Once set, every
+   *  later write on the page is unobserved: the chain carries an `observer`
+   *  step at that point, and the CLI exits 1. */
+  lost(): string | null;
   settle(): Promise<void>;
   close(): Promise<void>;
 }
@@ -64,6 +66,7 @@ export interface WatchSession {
 // neither accused (no did-not-land) nor claimed landed. Wrapped mode (with a
 // causal bracket) keeps the sharp full-4xx classification.
 const PASSIVE_AUTH_SKIP = new Set([401, 403]);
+const LOST = { verdict: "inconclusive", reason: "observer-lost", confidence: "high" } as const;
 
 const pathOf = (u: string): string => {
   try {
@@ -84,10 +87,11 @@ export async function startWatch(opts: WatchOptions): Promise<WatchSession | nul
 
   const grace = opts.graceMs ?? 1200;
   const apiOrigins = (opts.apiOrigins ?? []).filter(Boolean);
-  const signingKey = opts.signingKey ?? process.env.TRUEFACT_SIGNING_KEY;
-  const sign = signingKey ? makeSigner(signingKey) : null;
-  if (opts.jsonl) mkdirSync(dirname(opts.jsonl), { recursive: true });
-  let prevHash = "";
+  // The same redact → chain → sign → append path every other entry point uses.
+  const { record } = recorder(
+    { jsonl: opts.jsonl, signingKey: opts.signingKey, actor: opts.actor },
+    async () => ({ declared: [], verdict: "landed" }),
+  );
 
   // The watched-origin allowlist = the top-level page origin (tracked live) plus
   // any caller-declared API origins. Same guard errorsSince uses in wrapped mode.
@@ -102,13 +106,33 @@ export async function startWatch(opts: WatchOptions): Promise<WatchSession | nul
   const pendingErr = new Map<string, { timer: ReturnType<typeof setTimeout>; o: WriteObservation }>();
 
   const emit = (o: WriteObservation): void => {
-    if (opts.jsonl) {
-      const step = buildStep(o, prevHash, sign);
-      prevHash = step.hash!;
-      appendFileSync(opts.jsonl, JSON.stringify(step) + "\n");
-    }
+    record(buildStep(o));
     opts.onWrite?.(o);
   };
+
+  // The observer itself going blind is a fact the chain must carry: from here
+  // on, writes happen unseen and a clean-looking log would lie (invariant 9).
+  // Our own close() also marks the conn lost; that is shutdown, not blindness.
+  let closing = false;
+  let lostBeforeClose: string | null = null;
+  conn.onLost((reason) => {
+    if (closing) return;
+    record({
+      kind: "observer",
+      action: `observer lost: ${reason}`,
+      declaration: "auto",
+      verdict: "inconclusive",
+      evidence: {
+        before: null, after: null, settled: true,
+        session: { obstruction: null, confidence: "high", detail: "watch: observer lost", checked: [] },
+        postcondition: { ...LOST, auto: LOST, urlChanged: false, pageSwitched: false, treeAdded: [], treeRemoved: [], formsBefore: {}, formsAfter: {} },
+        observer: { network: "blind", lost: reason },
+      },
+      attempt: null, agent_claim: null, cost: null,
+      timestamp: new Date().toISOString(),
+    });
+    opts.onLost?.(reason);
+  });
 
   const finalize = (rec: { url: string; method: string; status?: number }, verdict: Verdict, reason: PostReason): void => {
     const o: WriteObservation = { method: rec.method, url: rec.url, status: rec.status ?? null, verdict, reason };
@@ -156,8 +180,7 @@ export async function startWatch(opts: WatchOptions): Promise<WatchSession | nul
     if (f && !f.parentId && f.url) pageOrigin = originOf(f.url); // main frame only
   });
 
-  await conn.cmd("Page.enable");
-  await conn.cmd("Network.enable");
+  await conn.cmd("Page.enable"); // Network is enabled by cdpConnect
   // Seed the page origin from the current main frame (watch may attach mid-run).
   try {
     const t = (await conn.cmd("Target.getTargetInfo")) as { targetInfo?: { url?: string } } | undefined;
@@ -181,24 +204,25 @@ export async function startWatch(opts: WatchOptions): Promise<WatchSession | nul
 
   return {
     origins: () => [pageOrigin, ...apiOrigins].filter(Boolean),
+    lost: () => (closing ? lostBeforeClose : conn.lost()),
     settle,
     close: async () => {
       await settle();
+      lostBeforeClose = conn.lost();
+      closing = true;
       conn.close();
     },
   };
 }
 
-// Build a minimal, chain-valid Step for one observed write. before/after are
-// null (watch has no DOM bracket); the network evidence carries the outcome.
-function buildStep(o: WriteObservation, prevHash: string, sign: ((h: string) => string) | null): Step {
+// One observed write as a Step. before/after are null (watch has no DOM
+// bracket); the network evidence carries the outcome. The recorder redacts
+// (a write URL can carry a token: POST /reset?token=…), chains and signs it.
+function buildStep(o: WriteObservation): Omit<Step, "observer" | "actor"> {
   const outcome = { verdict: o.verdict, reason: o.reason, confidence: "high" as const };
-  // A watched write URL can carry a token/PII in its path or query
-  // (POST /reset?token=…). Scrub every stored string, like the wrapped path.
-  const url = redactText(o.url);
-  const step: Step = {
+  return {
     kind: "write",
-    action: redactText(`${o.method} ${pathOf(o.url)}`),
+    action: `${o.method} ${pathOf(o.url)}`,
     declaration: "auto",
     verdict: o.verdict,
     evidence: {
@@ -215,28 +239,27 @@ function buildStep(o: WriteObservation, prevHash: string, sign: ((h: string) => 
         treeRemoved: [],
         formsBefore: {},
         formsAfter: {},
-        ...(o.verdict === "did-not-land" ? { network: { errors: [{ url, status: o.status }] } } : {}),
+        ...(o.verdict === "did-not-land" ? { network: { errors: [{ url: o.url, status: o.status }] } } : {}),
       },
+      observer: { network: "watched" },
     },
     attempt: null,
     agent_claim: null,
     cost: null,
     timestamp: new Date().toISOString(),
-    prevHash,
   };
-  step.hash = hashStep(step);
-  if (sign) step.sig = sign(step.hash);
-  return step;
 }
 
-// --- CLI glue: `truefact watch --port 9222 [--api-origins a,b] [--body-errors] [--jsonl out]`
+// --- CLI glue: `truefact watch --port 9222 [--api-origins a,b] [--body-errors] [--jsonl out] [--actor agent=x,run=y]`
 // Runs until Ctrl-C, printing one line per observed write, then a summary.
+// Exit 1 if any write did not land OR the observer went blind (an unseen write
+// is not a clean one).
 export async function runWatchCli(argv: string[]): Promise<number> {
   const flags: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) flags[argv[i].slice(2)] = argv[i + 1]?.startsWith("--") || argv[i + 1] === undefined ? "" : argv[++i];
   const port = Number(flags.port);
   if (!port) {
-    process.stderr.write("usage: truefact watch --port <n> [--api-origins a.com,b.com] [--body-errors] [--jsonl run.jsonl]\n");
+    process.stderr.write("usage: truefact watch --port <n> [--api-origins a.com,b.com] [--body-errors] [--jsonl run.jsonl] [--actor agent=x,run=y]\n");
     return 2;
   }
   const counts = { landed: 0, "did-not-land": 0 };
@@ -246,6 +269,8 @@ export async function runWatchCli(argv: string[]): Promise<number> {
     apiOrigins: flags["api-origins"] ? flags["api-origins"].split(",").map((s) => s.trim()).filter(Boolean) : undefined,
     bodyErrors: "body-errors" in flags,
     jsonl: flags.jsonl || undefined,
+    actor: parseActor(flags.actor),
+    onLost: (reason) => process.stdout.write(`  ✗ observer lost   ${reason} — writes from here on are unseen\n`),
     onWrite: (w) => {
       counts[w.verdict as "landed" | "did-not-land"]++;
       const s = w.status == null ? "wire-fail" : String(w.status);
@@ -259,6 +284,7 @@ export async function runWatchCli(argv: string[]): Promise<number> {
   process.stdout.write(`watching writes on ${session.origins().join(", ") || "the active page"}${flags.jsonl ? ` → ${flags.jsonl}` : ""}  (Ctrl-C to stop)\n`);
   await new Promise<void>((res) => process.once("SIGINT", () => res()));
   await session.close();
-  process.stdout.write(`\n${counts.landed} landed · ${counts["did-not-land"]} did-not-land\n`);
-  return counts["did-not-land"] > 0 ? 1 : 0;
+  const lost = session.lost();
+  process.stdout.write(`\n${counts.landed} landed · ${counts["did-not-land"]} did-not-land${lost ? ` · observer lost (${lost})` : ""}\n`);
+  return counts["did-not-land"] > 0 || lost ? 1 : 0;
 }

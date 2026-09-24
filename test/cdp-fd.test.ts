@@ -68,3 +68,75 @@ describe("cdpConnectFd", () => {
     assert.equal(r, undefined);
   });
 });
+
+// §A9 — observer liveness on the fd transport (docs/OBSERVER-PLAN.md §3,
+// "Connection: CdpConn.lost()"). A dead peer is a dead observer: `lost()` is
+// sticky with the first reason, `onLost` fires once with it, and a command on a
+// lost conn resolves undefined AT ONCE — never after CMD_TIMEOUT_MS, which today
+// stretches one dead read to 10 s and a dead step past a minute. Coordinator
+// decision 2026-09-23: our own `close()` ALSO sets lost() (no intentional-close
+// exemption — a close can never happen inside a bracket on the healthy path).
+describe("cdpConnectSocket: observer liveness (lost / onLost)", () => {
+  type LiveConn = CdpConn & { lost(): string | null; onLost(cb: (reason: string) => void): void };
+
+  async function pair(): Promise<{ conn: LiveConn; client: Socket; peer: Socket; server: ReturnType<typeof createNet> }> {
+    const path = join(tmpdir(), `tf-cdplost-${process.pid}-${Math.random().toString(36).slice(2)}.sock`);
+    const server = createNet();
+    const gotPeer = new Promise<Socket>((res) => server.once("connection", res));
+    await new Promise<void>((r) => server.listen(path, () => r()));
+    const client = connect(path);
+    await new Promise<void>((r) => client.once("connect", () => r()));
+    const peer = await gotPeer;
+    return { conn: cdpConnectSocket(client) as LiveConn, client, peer, server };
+  }
+  const closed = (s: Socket) => (s.destroyed ? Promise.resolve() : new Promise<void>((r) => s.once("close", () => r())));
+
+  it("given the peer socket closed, when lost() is read, then it is \"socket-closed\" and a subsequent cmd() resolves undefined immediately (< 100 ms, not CMD_TIMEOUT)", async () => {
+    const { conn, client, peer, server } = await pair();
+    try {
+      assert.equal(conn.lost(), null, "a live conn is not lost");
+      peer.destroy();
+      await closed(client);
+      assert.equal(conn.lost(), "socket-closed");
+      const t = Date.now();
+      const r = await conn.cmd("Runtime.evaluate", { expression: "1" });
+      const ms = Date.now() - t;
+      assert.equal(r, undefined);
+      assert.ok(ms < 100, `cmd on a lost conn took ${ms}ms — it must short-circuit, not wait CMD_TIMEOUT_MS`);
+    } finally {
+      conn.close();
+      server.close();
+    }
+  });
+
+  it("given the conn's own close() was called, then lost() is \"socket-closed\" too and cmd() resolves undefined at once (no intentional-close exemption)", async () => {
+    const { conn, client, peer, server } = await pair();
+    try {
+      conn.close();
+      await closed(client);
+      assert.equal(conn.lost(), "socket-closed");
+      const t = Date.now();
+      assert.equal(await conn.cmd("Runtime.evaluate", { expression: "1" }), undefined);
+      assert.ok(Date.now() - t < 100);
+    } finally {
+      peer.destroy();
+      server.close();
+    }
+  });
+
+  it("given an onLost callback, when the peer goes away, then it fires exactly once with the same reason lost() reports", async () => {
+    const { conn, client, peer, server } = await pair();
+    try {
+      const seen: string[] = [];
+      conn.onLost((reason) => seen.push(reason));
+      peer.destroy();
+      await closed(client);
+      await new Promise((r) => setTimeout(r, 20)); // 'error' + 'close' both fire on some paths; must not double-report
+      assert.deepEqual(seen, ["socket-closed"]);
+      assert.equal(conn.lost(), seen[0]);
+    } finally {
+      conn.close();
+      server.close();
+    }
+  });
+});

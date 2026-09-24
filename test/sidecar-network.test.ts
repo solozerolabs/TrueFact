@@ -7,8 +7,9 @@ import { createServer, type Server } from "node:http";
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Stagehand, localBrowser } from "@browserbasehq/stagehand";
-import { withTrueFact } from "../src/index.js";
+import { withTrueFact, type Step } from "../src/index.js";
 import { applyNetwork } from "../src/postcondition.js";
+import { cdpConnectBrowser, type CdpConn } from "../src/cdp.js";
 import { verifyChain } from "../src/chain.js";
 import { playwrightDriver } from "../src/driver-playwright.js";
 import { fakeStagehand } from "./helpers.js";
@@ -379,5 +380,127 @@ describe("network sidecar: multi-target (popups + cross-origin iframes)", () => 
     const step = await drive("open?c=c-flaky");
     assert.equal(step.verdict, "landed");
     assert.equal(step.evidence.postcondition?.network, undefined);
+  });
+});
+
+// §A — observer liveness (docs/OBSERVER-PLAN.md §3, tests A1–A5). An observer
+// that cannot see is a MISSING observer, not a clean one: a sidecar whose socket
+// died, or that never attached, must never let an optimistic ✅ read `landed`,
+// and must never accuse either. The seam is `network.conn` (a caller-owned
+// browser-level conn), so the test can drop it from inside a hand-rolled fake
+// `act` at the exact moment the case needs. Design fact relied on here (rev 2 +
+// coordinator decision 2026-09-23): `conn.close()` sets `lost()` to
+// "socket-closed" — there is no intentional-close exemption, because a close can
+// never happen inside a bracket on the healthy path — so a raw close on the
+// caller-owned conn IS the socket going away as far as the sidecar is concerned.
+describe("network sidecar: observer liveness — a blind observer never contributes", () => {
+  const PORT = 9431;
+  let browser: Awaited<ReturnType<typeof localBrowser.launch>>;
+  let sh: Stagehand;
+  let app: Server;
+  let base = "";
+
+  before(async () => {
+    app = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/submit") return res.writeHead(500).end("upstream exploded");
+      if (req.method === "POST" && req.url === "/ok") return res.writeHead(200, { "content-type": "application/json" }).end("{}");
+      if (req.method === "POST" && req.url === "/slow-reject") return void setTimeout(() => res.writeHead(500).end("late boom"), 800);
+      if (req.url === "/optimistic") return res.writeHead(200, { "content-type": "text/html" }).end(html("/submit"));
+      if (req.url === "/clean") return res.writeHead(200, { "content-type": "text/html" }).end(html("/ok"));
+      if (req.url === "/slow-reject-co") return res.writeHead(200, { "content-type": "text/html" }).end(htmlOpt("/slow-reject"));
+      return res.writeHead(404).end("no");
+    });
+    base = await listen(app);
+    browser = await localBrowser.launch({ headless: true, port: PORT });
+    sh = await Stagehand.create({ browser, logging: { level: "error" } });
+  });
+  after(async () => {
+    await browser?.close();
+    await shut(app);
+  });
+
+  type Observer = { network: "watched" | "blind" | "off"; lost?: string };
+  const observerOf = (s: Step): Observer | undefined => (s.evidence as Step["evidence"] & { observer?: Observer }).observer;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // A hand-rolled fake act: a REAL click on #place, with a hook that runs at a
+  // chosen moment relative to the click (before it / after it) — that is where
+  // each case drops the sidecar conn. Only the LLM is faked.
+  const fakeAct = (hook: { before?: () => Promise<void> | void; after?: () => Promise<void> | void }) =>
+    ({
+      browser: sh.browser,
+      act: async () => {
+        const page = (await sh.browser.context.activePage())!;
+        await hook.before?.();
+        await page.locator("#place").click();
+        await hook.after?.();
+        return { data: { success: true, message: "", actionDescription: "", actions: [{ selector: "#place", description: "", method: "click", arguments: [] }] }, metadata: {} };
+      },
+      extract: async () => ({ data: null }),
+      observe: async () => [],
+    }) as unknown as Stagehand;
+
+  const drive = async (route: string, network: { conn?: CdpConn; port?: number } | undefined, hook: Parameters<typeof fakeAct>[0], waitMs: number) => {
+    const w = withTrueFact(fakeAct(hook), { ...(network ? { network } : {}), screenshots: false, waitMs });
+    await w.page.goto(`${base}/${route}`);
+    const t = Date.now();
+    await w.act("place the order");
+    const ms = Date.now() - t;
+    await w.close();
+    return { step: w.replay.steps.at(-1)!, ms };
+  };
+
+  it("A1 given the sidecar conn closes before the click, when the page shows ✅ over a POST that 500s, then inconclusive / observer-lost with observer { network: blind, lost: socket-closed }", async () => {
+    const conn = (await cdpConnectBrowser(PORT)) as CdpConn;
+    const { step } = await drive("optimistic", { conn }, { before: () => conn.close() }, 1500);
+    assert.equal(step.verdict, "inconclusive");
+    assert.equal(step.evidence.postcondition?.reason, "observer-lost");
+    assert.deepEqual(observerOf(step), { network: "blind", lost: "socket-closed" });
+  });
+
+  it("A2 given the conn closes after the POST left but before its 500 arrives, when the ✅ is already painted, then inconclusive / observer-lost and the bracket resolves before the full waitMs (a dead sidecar must not burn the budget)", async () => {
+    const waitMs = 3000; // the /slow-reject 500 lands at 800 ms; the conn is gone by then
+    const conn = (await cdpConnectBrowser(PORT)) as CdpConn;
+    const { step, ms } = await drive("slow-reject-co", { conn }, { after: async () => { await sleep(200); conn.close(); } }, waitMs);
+    assert.equal(step.verdict, "inconclusive");
+    assert.equal(step.evidence.postcondition?.reason, "observer-lost");
+    assert.equal(observerOf(step)?.network, "blind");
+    assert.ok(ms < waitMs, `bracket took ${ms}ms — it waited the full ${waitMs}ms budget on a dead socket`);
+  });
+
+  it("A3 given network was requested but attach failed (port 1), when the page shows ✅, then inconclusive / observer-lost with observer.lost = attach-failed, never landed", async () => {
+    const { step } = await drive("optimistic", { port: 1 }, {}, 1500);
+    assert.equal(step.verdict, "inconclusive");
+    assert.equal(step.evidence.postcondition?.reason, "observer-lost");
+    assert.deepEqual(observerOf(step), { network: "blind", lost: "attach-failed" });
+  });
+
+  it("A4 given the conn closes AFTER the 500 was already seen, then did-not-land / network-error stands (blindness never promotes) and observer.network is blind", async () => {
+    const conn = (await cdpConnectBrowser(PORT)) as CdpConn;
+    // html("/submit") awaits the POST before painting ✅, so by the time the click
+    // resolves the 500 has answered; a beat for the CDP event to reach the sidecar.
+    const { step } = await drive("optimistic", { conn }, { after: async () => { await sleep(150); conn.close(); } }, 1500);
+    assert.equal(step.verdict, "did-not-land");
+    assert.equal(step.evidence.postcondition?.reason, "network-error");
+    assert.equal(step.evidence.postcondition?.network?.errors[0]?.status, 500);
+    assert.equal(observerOf(step)?.network, "blind");
+  });
+
+  it("A5 given a healthy conn and a clean 200 POST, then landed with observer { network: watched } (no false alarm on the healthy path)", async () => {
+    const conn = (await cdpConnectBrowser(PORT)) as CdpConn;
+    try {
+      const { step } = await drive("clean", { conn }, {}, 1500);
+      assert.equal(step.verdict, "landed");
+      assert.equal(step.evidence.postcondition?.reason, "confirmation");
+      assert.deepEqual(observerOf(step), { network: "watched" });
+    } finally {
+      conn.close();
+    }
+  });
+
+  it("given network is off (no opts.network), when a write lands, then observer is { network: off } — recorded so an auditor can tell unwatched from watched-and-clean", async () => {
+    const { step } = await drive("clean", undefined, {}, 1500);
+    assert.equal(step.verdict, "landed");
+    assert.deepEqual(observerOf(step), { network: "off" });
   });
 });

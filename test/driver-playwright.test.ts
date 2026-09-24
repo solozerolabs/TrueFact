@@ -52,3 +52,45 @@ describe("playwright driver: withTrueFact drives a real write through the seam",
     assert.equal(verifyChain(w.replay.steps).ok, true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// OBSERVER-PLAN §3 (A7): the reader goes dead mid-action. Today a closed
+// Playwright page still answers url() synchronously, evaluate() throws and the
+// fingerprint degrades to EMPTY_FP — which reads as a navigation. It must read
+// as a lost observer instead.
+// ---------------------------------------------------------------------------
+describe("playwright driver: observer liveness", () => {
+  const b = withPlaywrightBrowser();
+  let fx: Fixture;
+  before(async () => {
+    fx = await serve({ "/f": `<!doctype html><meta charset=utf8><button id=go>Go</button>` });
+  });
+  after(async () => {
+    await b.stop();
+    await fx.close();
+  });
+
+  it("A7: given the Playwright page closes during the action, when the step is recorded, then inconclusive / observer-lost (reader-unreadable), never landed / navigated", async () => {
+    const page = await b.page();
+    const drv = playwrightDriver(page);
+    // the action runs, then the page dies before we can read it back
+    const dying = {
+      ...drv,
+      act: async (instruction: unknown, opts?: unknown) => {
+        const r = await drv.act(instruction as never, opts);
+        await (page as unknown as { close(): Promise<void> }).close();
+        return r;
+      },
+    };
+    const w = withTrueFact(dying, { screenshots: false, waitMs: 400 });
+    await w.page.goto(`${fx.base}/f`);
+    await w.act({ selector: "#go", method: "click" }).catch(() => {}); // rethrow or not, the step must exist
+    const step = w.replay.steps.filter((s) => s.kind === "write").at(-1)!;
+    assert.ok(step, "a write that ran always gets a step");
+    assert.equal(step.verdict, "inconclusive");
+    assert.equal(step.evidence.postcondition?.reason, "observer-lost");
+    assert.notEqual(step.evidence.postcondition?.reason, "navigated");
+    const ev = step.evidence as typeof step.evidence & { observer?: { lost?: string } };
+    assert.equal(ev.observer?.lost, "reader-unreadable");
+  });
+});
