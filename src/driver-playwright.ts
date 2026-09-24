@@ -109,10 +109,14 @@ export function playwrightReader(page: PwPage): PageReader & { ready: Promise<vo
   const reader: PageReader & { ready: Promise<void> } = {
     id: "",
     // The CDP targetId, like the other drivers; resolved before the first read.
-    ready: session()
+    // Started inside a promise so a page without context() (the demo hands a
+    // Stagehand Page to this driver) rejects instead of throwing at construction;
+    // such a page carries its own pageId, which IS the targetId.
+    ready: Promise.resolve()
+      .then(() => session())
       .then((s) => s.send("Target.getTargetInfo"))
       .then((t) => { reader.id = (t as { targetInfo?: { targetId?: string } })?.targetInfo?.targetId ?? ""; })
-      .catch(() => {}),
+      .catch(() => { reader.id = String((page as { pageId?: string }).pageId ?? ""); }),
     async snapshotTree() {
       try {
         const res = (await (await session()).send("Accessibility.getFullAXTree")) as { nodes: AxNode[] };
