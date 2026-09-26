@@ -698,7 +698,7 @@ export function withTrueFact(source: Stagehand | Driver, opts: TrueFactOptions =
     const session: SessionEvidence = unreadable
       ? { obstruction: null, confidence: "high", detail: "unreadable", checked: [] }
       : await detectSession(page);
-    let verdict = decision.kind === "write" ? sessionVerdict(post.verdict, session, post.reason) : post.verdict;
+    let verdict = decision.kind === "write" ? sessionVerdict(post.verdict, session, post.reason, tab === "same" && !post.urlChanged) : post.verdict;
     const observer = observerOf();
     if (unreadable) observer!.lost = "reader-unreadable";
 

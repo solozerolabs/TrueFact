@@ -309,8 +309,13 @@ export function classify(before: PageState, after: PageState, tab: Tab): Outcome
  * heuristic one demotes landed to inconclusive; bare no-change plus ANY
  * obstruction is the cookie-overlay signature → did-not-land.
  */
-export function sessionVerdict(current: Verdict, session: SessionEvidence, reason?: PostReason): Verdict {
+export function sessionVerdict(current: Verdict, session: SessionEvidence, reason?: PostReason, stayedPut = false): Verdict {
   if (!session.obstruction) return current;
+  // A heuristic login wall the write never LEFT is the page it is operating
+  // (filling credentials is how a wall is passed, and an auth form under test
+  // is the destination), not one it ran into. A bounce TO a wall moves the URL
+  // or the tab, so it still demotes.
+  if (stayedPut && session.obstruction === "login-wall" && session.confidence === "heuristic") return current;
   if (session.confidence === "high") return "did-not-land";
   if (reason === "no-change") return "did-not-land";
   if (current === "landed") return "inconclusive";

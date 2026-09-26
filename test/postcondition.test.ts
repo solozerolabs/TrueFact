@@ -114,6 +114,16 @@ describe("sessionVerdict (obstruction rule + destination gate + R2 corroboration
   it("R2: bare no-change + any obstruction is the cookie-overlay signature -> did-not-land", () => {
     assert.equal(sessionVerdict("inconclusive", session({ obstruction: "overlay", confidence: "heuristic" }), "no-change"), "did-not-land");
   });
+  it("a heuristic login wall the write stayed on is the page it operates, not an obstruction", () => {
+    const wall = session({ obstruction: "login-wall", confidence: "heuristic" });
+    assert.equal(sessionVerdict("landed", wall, "field-match", true), "landed");
+    assert.equal(sessionVerdict("inconclusive", wall, "no-change", true), "inconclusive");
+    // a bounce TO the wall (URL or tab moved) still demotes
+    assert.equal(sessionVerdict("landed", wall, "navigated", false), "inconclusive");
+    assert.equal(sessionVerdict("inconclusive", wall, "no-change", false), "did-not-land");
+    // only the heuristic login wall is carved out: an overlay you stayed under still blocks
+    assert.equal(sessionVerdict("inconclusive", session({ obstruction: "overlay", confidence: "heuristic" }), "no-change", true), "did-not-land");
+  });
   it("no obstruction -> verdict unchanged, even on no-change", () => {
     assert.equal(sessionVerdict("inconclusive", session(), "no-change"), "inconclusive");
   });
@@ -234,6 +244,21 @@ describe("withTrueFact: postcondition end to end", () => {
     assert.equal(s.evidence.postcondition?.reason, "navigated");
     assert.equal(s.evidence.session.obstruction, "login-wall");
     assert.ok(Date.now() - t < 6000, "the null-fingerprint poll resolved before the deadline");
+  });
+
+  it("a fill ON the login form under test -> landed / field-match; the wall is the page it operates, not an obstruction", async () => {
+    await go("/login2");
+    const s = await runAct({ selector: "#user", method: "fill", args: ["ada"] });
+    assert.equal(s.evidence.session.obstruction, "login-wall", "the heuristic still fires and is recorded");
+    assert.equal(s.evidence.postcondition?.reason, "field-match");
+    assert.equal(s.verdict, "landed");
+  });
+
+  it("a no-op click ON the login form stays inconclusive, never a false did-not-land", async () => {
+    await go("/login2");
+    const s = await runAct({ selector: "#user", method: "click" });
+    assert.equal(s.evidence.postcondition?.reason, "no-change");
+    assert.equal(s.verdict, "inconclusive");
   });
 
   it("a new tab -> landed / new-page with newPageUrl; the extra tab is closed afterwards", async () => {
