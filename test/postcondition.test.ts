@@ -80,6 +80,14 @@ describe("classify (pure §4 rows, DAY4 R2)", () => {
     expect(classify(base, state({ tree: ["status", "StaticText: Order placed"] }), "same"), "landed", "confirmation", "heuristic"));
   it("row 8: form cleared -> landed / form-cleared / heuristic", () =>
     expect(classify(state({ forms: { email: form("a@b.co") } }), state({ forms: { email: form("") } }), "same"), "landed", "form-cleared", "heuristic"));
+  it("state-toggled: an ARIA toggle that flipped (and relabelled) -> landed / heuristic", () =>
+    expect(classify(state({ tree: ["button: Show password"] }), state({ tree: ["button: Hide password [pressed]"] }), "same"), "landed", "state-toggled", "heuristic"));
+  it("state-toggled: an [expanded] menu button that closed -> landed", () =>
+    expect(classify(state({ tree: ["button: Menu [expanded]"] }), state({ tree: ["button: Menu"] }), "same"), "landed", "state-toggled", "heuristic"));
+  it("state-toggled: [checked] must keep its name; a different checkbox appearing is not a toggle", () =>
+    expect(classify(state({ tree: ["checkbox: a"] }), state({ tree: ["checkbox: b [checked]"] }), "same"), "inconclusive", "changed-unclassified", "heuristic"));
+  it("a relabelled button with no toggle marker is not a toggle", () =>
+    expect(classify(state({ tree: ["button: Save"] }), state({ tree: ["button: Saving"] }), "same"), "inconclusive", "changed-unclassified", "heuristic"));
   it("row 9: hash-only change, nothing else -> inconclusive / hash-only-nav / heuristic", () =>
     expect(classify(base, state({ href: "http://x/a#done" }), "same"), "inconclusive", "hash-only-nav", "heuristic"));
   it("row 10: unclassified change -> inconclusive / changed-unclassified / heuristic", () =>

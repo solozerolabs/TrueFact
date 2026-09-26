@@ -29,6 +29,7 @@ export type PostReason =
   | "form-cleared"
   | "hash-only-nav"
   | "changed-unclassified"
+  | "state-toggled"
   | "no-change"
   | "non-mutating"
   | "unsettled"
@@ -232,6 +233,8 @@ export function evidenceOf(
  * wins. Bare no-change is `inconclusive`; corroboration to did-not-land
  * happens in sessionVerdict, where the obstruction is known.
  */
+const STATE_RX = /\s*\[(?:checked|selected|pressed|expanded)\]/g;
+
 export function classify(before: PageState, after: PageState, tab: Tab): Outcome {
   const added = multisetDiff(after.tree, before.tree);
   const removed = multisetDiff(before.tree, after.tree);
@@ -296,6 +299,20 @@ export function classify(before: PageState, after: PageState, tab: Tab): Outcome
     // require a positive post-submit signal (URL change / new confirmation node)
     // before treating an all-field clear as success.
     return out("landed", "form-cleared", "heuristic");
+  }
+  // A control whose state marker flipped is a toggle that took — that flip is the
+  // click's whole effect. [checked]/[selected] must keep role AND name; an ARIA
+  // toggle ([pressed]/[expanded]) may relabel itself ("Show password" → "Hide
+  // password"), so it keeps only its role. Heuristic: an obstruction or a blind
+  // network still demotes it.
+  const bare = (l: string) => l.replace(STATE_RX, "");
+  const roleOf = (l: string) => bare(l).split(": ")[0];
+  const marks = (l: string) => (l.match(STATE_RX) ?? []).map((m) => m.trim()).sort().join(" ");
+  const toggle = (l: string) => /\[(?:pressed|expanded)\]/.test(l);
+  const flipped = (r: string, a: string) =>
+    marks(r) !== marks(a) && (bare(r) === bare(a) || (roleOf(r) === roleOf(a) && (toggle(r) || toggle(a))));
+  if (added.some((a) => removed.some((r) => flipped(r, a)))) {
+    return out("landed", "state-toggled", "heuristic");
   }
   if (hashOnly && !contentChanged) return out("inconclusive", "hash-only-nav", "heuristic");
   if (contentChanged) return out("inconclusive", "changed-unclassified", "heuristic");

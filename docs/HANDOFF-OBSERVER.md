@@ -1,5 +1,7 @@
 # Handoff: observer liveness / context identity / actor identity (2026-09-23)
 
+> **Status 2026-09-26:** merged to `master` and released in **v0.3.0**; the `TrueReplay-observer` worktree is gone. Of "What is left", only item 3 (the Browserbase teardown probe) is still open — it needs a Browserbase endpoint.
+
 For the session that picks this up. Everything here is on branch **`feat/observer`** in the git worktree **`/Users/sidsharma/TrueReplay-observer`** (created off `origin/master` at `e0dab19`, v0.2.0). The main checkout `/Users/sidsharma/TrueReplay` is on `master` and has one unpushed commit (`a8aa4a1`, the `originOf` fix) that is already cherry-picked onto this branch as `ddb1a2b`. Work in the worktree, not in the main checkout.
 
 `node_modules` in the worktree is a symlink to the main checkout's (excluded via `.git/info/exclude`). Run `npm run build` before any test that shells out to `dist/cli.js` (`chain.test.ts`, `cost-persist.test.ts` do).

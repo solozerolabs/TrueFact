@@ -24,7 +24,8 @@ Day 4 rules (declared postconditions):
 - `act` options are parsed by Stagehand with `z.strictObject` and **throw on unknown keys** — strip `expect`/`waitMs` before delegating.
 - A met declaration lifts only `no-change` / `changed-unclassified` / `hash-only-nav` / heuristic `landed`. It never overrides `validation-error`, a corroborated `no-change`, or the destination gate. `absent` declarations only tighten. Reject vacuous declarations at call time.
 - `locator(sel).count()` is the only Locator read that does not throw on zero matches; gate `isVisible()`/`innerText()` behind it. `waitForSelector` **rejects** on timeout.
-- Bare `no-change` is `inconclusive`; with a session obstruction it is `did-not-land`.
+- Bare `no-change` is `inconclusive`; with a session obstruction it is `did-not-land`. Exception: a heuristic `login-wall` the write never LEFT (same URL, same tab) is the page it operates — an auth form under test — so it neither demotes nor corroborates (`sessionVerdict(..., stayedPut)`); a bounce INTO a wall still does.
+- `state-toggled` (landed, heuristic): the only diff is a control's own state marker flipping. `axToLines` emits `[pressed]`/`[expanded]` beside `[checked]`/`[selected]`; `[checked]`/`[selected]` must keep role + name, an ARIA toggle (`[pressed]`/`[expanded]`) may relabel itself ("Show password" → "Hide password").
 
 CI: install a Chrome that `localBrowser.launch` can find (`browser-actions/setup-chrome` or `npx playwright install chrome`); root containers need `--no-sandbox` via `launch({ args })`; `headless: true` always; every test passes `screenshots: false`; no wall-clock assertions, only budget-relative ones; integration fixtures go on the `serve()` HTTP server (a `locator` action costs ~1 s on a `data:` page vs ~9 ms over HTTP); Node ≥ 22.18.
 

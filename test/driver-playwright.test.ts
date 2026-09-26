@@ -23,6 +23,14 @@ describe("axToLines: CDP AX tree -> classifier line grammar", () => {
     // status kept as a role-only line; StaticText carries the confirmation text.
     assert.deepEqual(axToLines(nodes), ["button: Go", "checkbox: agree [checked]", "status", "StaticText: Saved — #9"]);
   });
+  it("marks ARIA toggle state: [pressed] (true|mixed) and [expanded]", () => {
+    const nodes = [
+      { nodeId: "1", role: { value: "button" }, name: { value: "Hide password" }, properties: [{ name: "pressed", value: { value: "true" } }] },
+      { nodeId: "2", role: { value: "button" }, name: { value: "Show password" }, properties: [{ name: "pressed", value: { value: "false" } }] },
+      { nodeId: "3", role: { value: "button" }, name: { value: "Menu" }, properties: [{ name: "expanded", value: { value: true } }] },
+    ];
+    assert.deepEqual(axToLines(nodes), ["button: Hide password [pressed]", "button: Show password", "button: Menu [expanded]"]);
+  });
 });
 
 describe("playwright driver: withTrueFact drives a real write through the seam", () => {
@@ -30,6 +38,8 @@ describe("playwright driver: withTrueFact drives a real write through the seam",
   let fx: Fixture;
   before(async () => {
     fx = await serve({
+      "/toggle": `<!doctype html><meta charset=utf8><form><input id=pw type=password value=hunter2><button id=t type=button aria-label="Show password" aria-pressed=false>eye</button></form>
+        <script>const t=document.getElementById('t'),pw=document.getElementById('pw');t.onclick=()=>{const on=pw.type==='password';pw.type=on?'text':'password';t.setAttribute('aria-pressed',String(on));t.setAttribute('aria-label',on?'Hide password':'Show password');};</script>`,
       "/f": `<!doctype html><meta charset=utf8><button id=go>Go</button>
         <script>document.getElementById('go').onclick=()=>{const p=document.createElement('p');p.setAttribute('role','status');p.textContent='Saved — #9';document.body.appendChild(p);};</script>`,
     });
@@ -50,6 +60,16 @@ describe("playwright driver: withTrueFact drives a real write through the seam",
     assert.equal(step.verdict, "landed"); // role=status confirmation, read via CDP AX tree
     assert.equal(step.agent_claim, null); // Playwright self-reports nothing — honest degrade
     assert.equal(verifyChain(w.replay.steps).ok, true);
+  });
+
+  it("a show/hide password toggle on a sign-in form -> landed / state-toggled (the Syndai dogfood case)", async () => {
+    const page = await b.page();
+    const w = withTrueFact(playwrightDriver(page), { screenshots: false, waitMs: 400 });
+    await w.page.goto(`${fx.base}/toggle`);
+    await w.act({ selector: "#t", method: "click" });
+    const step = w.replay.steps.at(-1)!;
+    assert.equal(step.evidence.postcondition?.reason, "state-toggled");
+    assert.equal(step.verdict, "landed");
   });
 });
 

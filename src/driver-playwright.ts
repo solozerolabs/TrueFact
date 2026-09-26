@@ -54,7 +54,7 @@ const DROP = new Set(["none", "generic", "InlineTextBox", "RootWebArea"]);
 /**
  * Flatten `Accessibility.getFullAXTree` nodes into the same normalized lines
  * `readTree` yields for Stagehand: `role`, or `role: name`, with `[checked]` /
- * `[selected]` appended from AX properties. The classifier needs before/after
+ * `[selected]` / `[pressed]` / `[expanded]` appended from AX properties. The classifier needs before/after
  * self-consistency from one reader, not byte-parity with Stagehand, so this
  * reproduces the role signals (`status`/`alert`/`dialog`/`button`/…) and the
  * StaticText that carries confirmation/error text — which is all it reads.
@@ -76,6 +76,11 @@ export function axToLines(nodes: AxNode[]): string[] {
       const checked = prop(n, "checked");
       if (checked === "true" || checked === "mixed") line += " [checked]";
       if (prop(n, "selected") === true) line += " [selected]";
+      // Toggle state (a show/hide or menu button): without it a click whose whole
+      // effect is `aria-pressed`/`aria-expanded` flipping diffs as unclassified.
+      const pressed = prop(n, "pressed");
+      if (pressed === "true" || pressed === "mixed") line += " [pressed]";
+      if (prop(n, "expanded") === true) line += " [expanded]";
       out.push(line);
     }
     for (const id of n.childIds ?? []) {
